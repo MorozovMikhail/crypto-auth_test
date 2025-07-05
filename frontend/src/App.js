@@ -10,9 +10,14 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
-  Alert
+  Alert,
+  Divider,
+  Tabs,
+  Tab
 } from '@mui/material';
 import cadesplugin from 'crypto-pro-cadesplugin';
+import EcpAuth from './components/EcpAuth';
+import CertificateList from './components/CertificateList';
 
 function App() {
   const [loading, setLoading] = useState(false);
@@ -20,6 +25,8 @@ function App() {
   const [certificates, setCertificates] = useState([]);
   const [selectedCert, setSelectedCert] = useState('');
   const [pluginStatus, setPluginStatus] = useState('checking');
+  const [consoleLogging, setConsoleLogging] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
 
   useEffect(() => {
     const checkPluginAndLoadCertificates = async () => {
@@ -65,6 +72,67 @@ function App() {
     } catch (err) {
       console.error('Certificate loading error:', err);
       setError('Ошибка при загрузке сертификатов: ' + (err.message || err.toString()));
+    }
+  };
+
+  // Новая функция для вывода всех сертификатов в консоль
+  const logAllCertificatesToConsole = async () => {
+    try {
+      setConsoleLogging(true);
+      setError(null);
+
+      // Получаем функцию инициализации плагина
+      const cadesPluginInitFunction = await cadesplugin;
+      const certsApi = await cadesPluginInitFunction();
+
+      console.log('=== НАЧАЛО ВЫВОДА ВСЕХ СЕРТИФИКАТОВ ===');
+      
+      // Получаем список всех сертификатов
+      const certList = await certsApi.getCertsList();
+      
+      console.log(`Найдено сертификатов: ${certList.length}`);
+      
+      if (certList.length === 0) {
+        console.log('Сертификаты не найдены');
+        setError('Сертификаты не найдены');
+        return;
+      }
+
+      // Выводим информацию о каждом сертификате
+      certList.forEach((cert, index) => {
+        console.log(`\n--- Сертификат ${index + 1} ---`);
+        console.log('Thumbprint:', cert.thumbprint);
+        console.log('Subject Name:', cert.subjectInfo);
+        
+        // Попробуем получить дополнительную информацию, если доступна
+        if (cert.issuerInfo) {
+          console.log('Issuer Name:', cert.issuerInfo);
+        }
+        if (cert.validFrom) {
+          console.log('Valid From:', cert.validFrom);
+        }
+        if (cert.validTo) {
+          console.log('Valid To:', cert.validTo);
+        }
+        if (cert.serialNumber) {
+          console.log('Serial Number:', cert.serialNumber);
+        }
+        
+        // Выводим все доступные свойства сертификата
+        console.log('Все свойства сертификата:', Object.keys(cert));
+        console.log('Полный объект сертификата:', cert);
+      });
+
+      console.log('\n=== КОНЕЦ ВЫВОДА ВСЕХ СЕРТИФИКАТОВ ===');
+      
+      // Также выводим в alert для удобства
+      alert(`Найдено ${certList.length} сертификатов. Подробная информация выведена в консоль браузера (F12 -> Console)`);
+      
+    } catch (err) {
+      console.error('Ошибка при выводе сертификатов в консоль:', err);
+      setError('Ошибка при выводе сертификатов: ' + (err.message || err.toString()));
+    } finally {
+      setConsoleLogging(false);
     }
   };
 
@@ -123,9 +191,66 @@ function App() {
     }
   };
 
+  const handleTabChange = (event, newValue) => {
+    setActiveTab(newValue);
+  };
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 0:
+        return (
+          <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            {/* Кнопка для вывода всех сертификатов в консоль */}
+            <Button
+              variant="outlined"
+              color="secondary"
+              onClick={logAllCertificatesToConsole}
+              disabled={consoleLogging}
+              sx={{ mb: 3, width: '100%' }}
+            >
+              {consoleLogging ? <CircularProgress size={24} /> : 'Вывести все сертификаты в консоль'}
+            </Button>
+
+            <Divider sx={{ width: '100%', mb: 3 }} />
+
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Выберите сертификат</InputLabel>
+              <Select
+                value={selectedCert}
+                onChange={(e) => setSelectedCert(e.target.value)}
+                label="Выберите сертификат"
+              >
+                {certificates.map((cert) => (
+                  <MenuItem key={cert.thumbprint} value={cert.thumbprint}>
+                    {cert.subjectName}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleSignIn}
+              disabled={loading || !selectedCert}
+              sx={{ mt: 2 }}
+            >
+              {loading ? <CircularProgress size={24} /> : 'Войти с помощью ЭЦП'}
+            </Button>
+          </Box>
+        );
+      case 1:
+        return <EcpAuth />;
+      case 2:
+        return <CertificateList />;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <Container maxWidth="sm">
-      <Box sx={{ mt: 8 }}>
+    <Container maxWidth="lg">
+      <Box sx={{ mt: 4 }}>
         <Paper elevation={3} sx={{ p: 4 }}>
           <Typography variant="h4" component="h1" gutterBottom align="center">
             Авторизация с помощью ЭЦП
@@ -144,32 +269,15 @@ function App() {
           )}
           
           {pluginStatus === 'ready' && (
-            <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <FormControl fullWidth sx={{ mb: 2 }}>
-                <InputLabel>Выберите сертификат</InputLabel>
-                <Select
-                  value={selectedCert}
-                  onChange={(e) => setSelectedCert(e.target.value)}
-                  label="Выберите сертификат"
-                >
-                  {certificates.map((cert) => (
-                    <MenuItem key={cert.thumbprint} value={cert.thumbprint}>
-                      {cert.subjectName}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={handleSignIn}
-                disabled={loading || !selectedCert}
-                sx={{ mt: 2 }}
-              >
-                {loading ? <CircularProgress size={24} /> : 'Войти с помощью ЭЦП'}
-              </Button>
-            </Box>
+            <>
+              <Tabs value={activeTab} onChange={handleTabChange} sx={{ mb: 3 }}>
+                <Tab label="Основная авторизация" />
+                <Tab label="Альтернативная авторизация" />
+                <Tab label="Список сертификатов" />
+              </Tabs>
+              
+              {renderTabContent()}
+            </>
           )}
           
           {error && (

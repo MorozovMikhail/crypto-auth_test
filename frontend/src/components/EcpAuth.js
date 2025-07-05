@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Button, TextField, Typography, Box, Alert, CircularProgress, MenuItem, Select, FormControl, InputLabel, List, ListItem, ListItemText } from "@mui/material";
+import { Button, TextField, Typography, Box, Alert, CircularProgress, MenuItem, Select, FormControl, InputLabel, List, ListItem, ListItemText, Divider } from "@mui/material";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8080/api/auth";
 
@@ -8,6 +8,7 @@ const EcpAuth = () => {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [certLoading, setCertLoading] = useState(false);
+  const [consoleLogging, setConsoleLogging] = useState(false);
   const [sessionId] = useState(() => Math.random().toString(36).substring(2));
   const [certificates, setCertificates] = useState([]);
   const [selectedCertIndex, setSelectedCertIndex] = useState("");
@@ -61,6 +62,98 @@ const EcpAuth = () => {
     setCertLoading(false);
   };
 
+  // Новая функция для вывода всех сертификатов в консоль
+  const logAllCertificatesToConsole = async () => {
+    try {
+      setConsoleLogging(true);
+      setStatus("");
+
+      console.log('=== НАЧАЛО ВЫВОДА ВСЕХ СЕРТИФИКАТОВ (EcpAuth) ===');
+      
+      await window.cadesplugin;
+      const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+      await store.Open(
+        window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
+        window.cadesplugin.CAPICOM_MY_STORE,
+        window.cadesplugin.CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED
+      );
+      
+      const certs = await store.Certificates;
+      const count = await certs.Count;
+      
+      console.log(`Найдено сертификатов: ${count}`);
+      
+      if (count === 0) {
+        console.log('Сертификаты не найдены');
+        setStatus('Сертификаты не найдены');
+        return;
+      }
+
+      // Выводим информацию о каждом сертификате
+      for (let i = 1; i <= count; i++) {
+        const cert = await certs.Item(i);
+        console.log(`\n--- Сертификат ${i} ---`);
+        
+        try {
+          const subjectName = await cert.SubjectName;
+          console.log('Subject Name:', subjectName);
+        } catch (e) {
+          console.log('Subject Name: Ошибка получения -', e.message);
+        }
+        
+        try {
+          const issuerName = await cert.IssuerName;
+          console.log('Issuer Name:', issuerName);
+        } catch (e) {
+          console.log('Issuer Name: Ошибка получения -', e.message);
+        }
+        
+        try {
+          const validFrom = await cert.ValidFromDate;
+          console.log('Valid From:', validFrom);
+        } catch (e) {
+          console.log('Valid From: Ошибка получения -', e.message);
+        }
+        
+        try {
+          const validTo = await cert.ValidToDate;
+          console.log('Valid To:', validTo);
+        } catch (e) {
+          console.log('Valid To: Ошибка получения -', e.message);
+        }
+        
+        try {
+          const serialNumber = await cert.SerialNumber;
+          console.log('Serial Number:', serialNumber);
+        } catch (e) {
+          console.log('Serial Number: Ошибка получения -', e.message);
+        }
+        
+        try {
+          const thumbprint = await cert.Thumbprint;
+          console.log('Thumbprint:', thumbprint);
+        } catch (e) {
+          console.log('Thumbprint: Ошибка получения -', e.message);
+        }
+        
+        // Попробуем получить дополнительные свойства
+        console.log('Доступные методы сертификата:', Object.getOwnPropertyNames(Object.getPrototypeOf(cert)));
+        console.log('Полный объект сертификата:', cert);
+      }
+
+      console.log('\n=== КОНЕЦ ВЫВОДА ВСЕХ СЕРТИФИКАТОВ (EcpAuth) ===');
+      
+      // Также выводим в alert для удобства
+      alert(`Найдено ${count} сертификатов. Подробная информация выведена в консоль браузера (F12 -> Console)`);
+      
+    } catch (e) {
+      console.error('Ошибка при выводе сертификатов в консоль:', e);
+      setStatus('Ошибка при выводе сертификатов: ' + e.message);
+    } finally {
+      setConsoleLogging(false);
+    }
+  };
+
   // При выборе сертификата
   const handleCertChange = (event) => {
     const idx = event.target.value;
@@ -100,6 +193,21 @@ const EcpAuth = () => {
   return (
     <Box sx={{ maxWidth: 500, mx: "auto", mt: 8, p: 4, boxShadow: 3, borderRadius: 2 }}>
       <Typography variant="h5" gutterBottom>Вход с помощью ЭЦП</Typography>
+      
+      {/* Кнопка для вывода всех сертификатов в консоль */}
+      <Button 
+        variant="outlined" 
+        color="secondary" 
+        fullWidth 
+        onClick={logAllCertificatesToConsole} 
+        sx={{ mb: 2 }} 
+        disabled={consoleLogging}
+      >
+        {consoleLogging ? <CircularProgress size={24} /> : "Вывести все сертификаты в консоль"}
+      </Button>
+
+      <Divider sx={{ mb: 2 }} />
+
       <Button variant="contained" fullWidth onClick={getChallenge} sx={{ mb: 2 }} disabled={loading}>
         {loading ? <CircularProgress size={24} /> : "Получить challenge"}
       </Button>

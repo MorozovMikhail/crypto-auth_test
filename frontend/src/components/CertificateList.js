@@ -38,7 +38,7 @@ const CertificateList = () => {
         setPluginStatus('ready');
       } else {
         setPluginStatus('error');
-        setError('API методы недоступны');
+        setError('API методы недоступны. Убедитесь, что плагин КриптоПро установлен.');
       }
     } catch (err) {
       setPluginStatus('not_found');

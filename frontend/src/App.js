@@ -19,6 +19,9 @@ import cadesplugin from 'crypto-pro-cadesplugin';
 import EcpAuth from './components/EcpAuth';
 import CertificateList from './components/CertificateList';
 
+// Определяем API URL для разных окружений
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+
 function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -149,7 +152,7 @@ function App() {
       const sessionId = Math.random().toString(36).substring(7);
       
       // Получаем challenge от сервера
-      const response = await fetch(`http://localhost:8080/api/auth/challenge?sessionId=${sessionId}`);
+      const response = await fetch(`${API_BASE_URL}/api/auth/challenge?sessionId=${sessionId}`);
       const { challenge } = await response.json();
 
       // Используем методы пакета для подписи
@@ -163,7 +166,7 @@ function App() {
       const certBase64 = cert ? await cert.Export(0) : null; // Экспорт сертификата
 
       // Отправляем подпись на сервер
-      const verifyResponse = await fetch('http://localhost:8080/api/auth/verify', {
+      const verifyResponse = await fetch(`${API_BASE_URL}/api/auth/verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

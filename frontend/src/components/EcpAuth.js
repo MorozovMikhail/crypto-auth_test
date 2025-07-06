@@ -25,7 +25,7 @@ const EcpAuth = () => {
     setLoading(false);
   };
 
-  // Получение сертификатов пользователя
+  // Получение сертификатов пользователя и с токенов
   const getCertificates = async () => {
     setCertLoading(true);
     setCertificates([]);
@@ -33,6 +33,7 @@ const EcpAuth = () => {
     setCertInfo(null);
     try {
       await window.cadesplugin;
+      // Обычное хранилище
       const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
       await store.Open(
         window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
@@ -41,11 +42,16 @@ const EcpAuth = () => {
       );
       const certs = await store.Certificates;
       const count = await certs.Count;
-      if (count === 0) {
-        setStatus("Нет доступных сертификатов.");
-        setCertLoading(false);
-        return;
-      }
+      // Внешние устройства (токены)
+      const storeToken = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+      await storeToken.Open(
+        window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
+        window.cadesplugin.CAPICOM_MY_STORE,
+        window.cadesplugin.CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER
+      );
+      const certsToken = await storeToken.Certificates;
+      const countToken = await certsToken.Count;
+      // Собираем все сертификаты
       const certList = [];
       for (let i = 1; i <= count; i++) {
         const cert = await certs.Item(i);
@@ -53,7 +59,20 @@ const EcpAuth = () => {
         const issuerName = await cert.IssuerName;
         const validFrom = await cert.ValidFromDate;
         const validTo = await cert.ValidToDate;
-        certList.push({ cert, subjectName, issuerName, validFrom, validTo });
+        certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: 'Личное хранилище' });
+      }
+      for (let i = 1; i <= countToken; i++) {
+        const cert = await certsToken.Item(i);
+        const subjectName = await cert.SubjectName;
+        const issuerName = await cert.IssuerName;
+        const validFrom = await cert.ValidFromDate;
+        const validTo = await cert.ValidToDate;
+        certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: 'Токен/смарт-карта' });
+      }
+      if (certList.length === 0) {
+        setStatus("Нет доступных сертификатов.");
+        setCertLoading(false);
+        return;
       }
       setCertificates(certList);
     } catch (e) {
@@ -71,81 +90,52 @@ const EcpAuth = () => {
       console.log('=== НАЧАЛО ВЫВОДА ВСЕХ СЕРТИФИКАТОВ (EcpAuth) ===');
       
       await window.cadesplugin;
+      // Обычное хранилище
       const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
       await store.Open(
         window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
         window.cadesplugin.CAPICOM_MY_STORE,
         window.cadesplugin.CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED
       );
-      
       const certs = await store.Certificates;
       const count = await certs.Count;
-      
-      console.log(`Найдено сертификатов: ${count}`);
-      
-      if (count === 0) {
+      // Внешние устройства (токены)
+      const storeToken = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+      await storeToken.Open(
+        window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
+        window.cadesplugin.CAPICOM_MY_STORE,
+        window.cadesplugin.CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER
+      );
+      const certsToken = await storeToken.Certificates;
+      const countToken = await certsToken.Count;
+      // Собираем все сертификаты
+      let allCerts = [];
+      for (let i = 1; i <= count; i++) {
+        allCerts.push(await certs.Item(i));
+      }
+      for (let i = 1; i <= countToken; i++) {
+        allCerts.push(await certsToken.Item(i));
+      }
+      console.log(`Найдено сертификатов: ${allCerts.length}`);
+      if (allCerts.length === 0) {
         console.log('Сертификаты не найдены');
         setStatus('Сертификаты не найдены');
         return;
       }
-
-      // Выводим информацию о каждом сертификате
-      for (let i = 1; i <= count; i++) {
-        const cert = await certs.Item(i);
-        console.log(`\n--- Сертификат ${i} ---`);
-        
-        try {
-          const subjectName = await cert.SubjectName;
-          console.log('Subject Name:', subjectName);
-        } catch (e) {
-          console.log('Subject Name: Ошибка получения -', e.message);
-        }
-        
-        try {
-          const issuerName = await cert.IssuerName;
-          console.log('Issuer Name:', issuerName);
-        } catch (e) {
-          console.log('Issuer Name: Ошибка получения -', e.message);
-        }
-        
-        try {
-          const validFrom = await cert.ValidFromDate;
-          console.log('Valid From:', validFrom);
-        } catch (e) {
-          console.log('Valid From: Ошибка получения -', e.message);
-        }
-        
-        try {
-          const validTo = await cert.ValidToDate;
-          console.log('Valid To:', validTo);
-        } catch (e) {
-          console.log('Valid To: Ошибка получения -', e.message);
-        }
-        
-        try {
-          const serialNumber = await cert.SerialNumber;
-          console.log('Serial Number:', serialNumber);
-        } catch (e) {
-          console.log('Serial Number: Ошибка получения -', e.message);
-        }
-        
-        try {
-          const thumbprint = await cert.Thumbprint;
-          console.log('Thumbprint:', thumbprint);
-        } catch (e) {
-          console.log('Thumbprint: Ошибка получения -', e.message);
-        }
-        
-        // Попробуем получить дополнительные свойства
+      for (let i = 0; i < allCerts.length; i++) {
+        const cert = allCerts[i];
+        console.log(`\n--- Сертификат ${i + 1} ---`);
+        try { console.log('Subject Name:', await cert.SubjectName); } catch (e) {}
+        try { console.log('Issuer Name:', await cert.IssuerName); } catch (e) {}
+        try { console.log('Valid From:', await cert.ValidFromDate); } catch (e) {}
+        try { console.log('Valid To:', await cert.ValidToDate); } catch (e) {}
+        try { console.log('Serial Number:', await cert.SerialNumber); } catch (e) {}
+        try { console.log('Thumbprint:', await cert.Thumbprint); } catch (e) {}
         console.log('Доступные методы сертификата:', Object.getOwnPropertyNames(Object.getPrototypeOf(cert)));
         console.log('Полный объект сертификата:', cert);
       }
-
       console.log('\n=== КОНЕЦ ВЫВОДА ВСЕХ СЕРТИФИКАТОВ (EcpAuth) ===');
-      
-      // Также выводим в alert для удобства
-      alert(`Найдено ${count} сертификатов. Подробная информация выведена в консоль браузера (F12 -> Console)`);
-      
+      alert(`Найдено ${allCerts.length} сертификатов. Подробная информация выведена в консоль браузера (F12 -> Console)`);
     } catch (e) {
       console.error('Ошибка при выводе сертификатов в консоль:', e);
       setStatus('Ошибка при выводе сертификатов: ' + e.message);
@@ -234,7 +224,7 @@ const EcpAuth = () => {
               >
                 {certificates.map((c, idx) => (
                   <MenuItem value={idx} key={idx}>
-                    {c.subjectName}
+                    {c.subjectName} ({c.source})
                   </MenuItem>
                 ))}
               </Select>
@@ -253,6 +243,9 @@ const EcpAuth = () => {
               </ListItem>
               <ListItem>
                 <ListItemText primary="Действителен до" secondary={certInfo.validTo} />
+              </ListItem>
+              <ListItem>
+                <ListItemText primary="Источник" secondary={certInfo.source} />
               </ListItem>
             </List>
           )}

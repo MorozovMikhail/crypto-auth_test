@@ -17,7 +17,8 @@ import {
   Tooltip
 } from '@mui/material';
 import EcpAuth from './components/EcpAuth';
-import CertificateList from './components/CertificateList';
+// Удаляю импорт CertificateList
+// import CertificateList from './components/CertificateList';
 
 // Определяем API URL для разных окружений
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';

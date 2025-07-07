@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Button, TextField, Typography, Box, Alert, CircularProgress, MenuItem, Select, FormControl, InputLabel, List, ListItem, ListItemText, Divider } from "@mui/material";
+import { Button, TextField, Typography, Box, Alert, CircularProgress, MenuItem, Select, FormControl, InputLabel, List, ListItem, ListItemText, Divider, Tooltip } from "@mui/material";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8080/api/auth";
 
@@ -25,13 +25,13 @@ const EcpAuth = () => {
     setLoading(false);
   };
 
-  // Получение сертификатов пользователя и с токенов (как на demo-странице)
+  // Получение сертификатов (теперь только через window.crypto_pro.getCertificates, если доступно)
   const getCertificates = async () => {
     setCertLoading(true);
     setCertificates([]);
     setSelectedCertIndex("");
     setCertInfo(null);
-    // Новый способ через window.crypto_pro.getCertificates
+    // Основной способ — через window.crypto_pro.getCertificates
     if (window.crypto_pro && typeof window.crypto_pro.getCertificates === 'function') {
       try {
         console.log('Используется window.crypto_pro.getCertificates');
@@ -64,6 +64,7 @@ const EcpAuth = () => {
         return;
       }
     }
+    // Fallback: если нет window.crypto_pro — используем CAdESCOM.Store
     try {
       await window.cadesplugin;
       const certList = [];
@@ -244,7 +245,10 @@ const EcpAuth = () => {
   return (
     <Box sx={{ maxWidth: 500, mx: "auto", mt: 8, p: 4, boxShadow: 3, borderRadius: 2 }}>
       <Typography variant="h5" gutterBottom>Вход с помощью ЭЦП</Typography>
-      
+      <Alert severity="info" sx={{ mb: 2 }}>
+        Если вы только что вставили токен, подождите несколько секунд и нажмите <b>«Обновить сертификаты»</b>.<br/>
+        Если сертификаты не появились — попробуйте ещё раз.
+      </Alert>
       {/* Кнопка для вывода всех сертификатов в консоль */}
       <Button 
         variant="outlined" 
@@ -256,9 +260,7 @@ const EcpAuth = () => {
       >
         {consoleLogging ? <CircularProgress size={24} /> : "Вывести все сертификаты в консоль"}
       </Button>
-
       <Divider sx={{ mb: 2 }} />
-
       <Button variant="contained" fullWidth onClick={getChallenge} sx={{ mb: 2 }} disabled={loading}>
         {loading ? <CircularProgress size={24} /> : "Получить challenge"}
       </Button>
@@ -271,9 +273,11 @@ const EcpAuth = () => {
             InputProps={{ readOnly: true }}
             sx={{ mb: 2 }}
           />
-          <Button variant="outlined" fullWidth onClick={getCertificates} sx={{ mb: 2 }} disabled={certLoading}>
-            {certLoading ? <CircularProgress size={24} /> : "Показать сертификаты"}
-          </Button>
+          <Tooltip title="Если вы только что вставили токен, подождите пару секунд и нажмите ещё раз!">
+            <Button variant="outlined" fullWidth onClick={getCertificates} sx={{ mb: 2 }} disabled={certLoading}>
+              {certLoading ? <CircularProgress size={24} /> : "Обновить сертификаты"}
+            </Button>
+          </Tooltip>
           {certificates.length > 0 && (
             <FormControl fullWidth sx={{ mb: 2 }}>
               <InputLabel id="cert-select-label">Выберите сертификат</InputLabel>

@@ -25,25 +25,23 @@ const EcpAuth = () => {
     setLoading(false);
   };
 
-  // Получение сертификатов (теперь только через window.crypto_pro.getCertificates, если доступно)
+  // Универсальная функция получения сертификатов
   const getCertificates = async () => {
     setCertLoading(true);
     setCertificates([]);
     setSelectedCertIndex("");
     setCertInfo(null);
-    // Основной способ — через window.crypto_pro.getCertificates
+    // 1. Пробуем window.crypto_pro.getCertificates
     if (window.crypto_pro && typeof window.crypto_pro.getCertificates === 'function') {
       try {
         console.log('Используется window.crypto_pro.getCertificates');
         window.crypto_pro.getCertificates(function(certs) {
           if (!certs || certs.length === 0) {
-            setStatus("Нет доступных сертификатов (crypto_pro.getCertificates)");
+            setStatus('Нет доступных сертификатов (crypto_pro.getCertificates)');
             setCertLoading(false);
             return;
           }
-          // Выводим в консоль и отображаем в интерфейсе
           console.log('Сертификаты (crypto_pro):', certs);
-          // Приводим к единому виду для отображения
           const certList = certs.map((c, idx) => ({
             subjectName: c.subject || c.subjectName || `Сертификат ${idx+1}`,
             issuerName: c.issuer || c.issuerName || '',
@@ -64,7 +62,7 @@ const EcpAuth = () => {
         return;
       }
     }
-    // Fallback: если нет window.crypto_pro — используем CAdESCOM.Store
+    // 2. Fallback: CAdESCOM.Store
     try {
       await window.cadesplugin;
       const certList = [];
@@ -245,10 +243,6 @@ const EcpAuth = () => {
   return (
     <Box sx={{ maxWidth: 500, mx: "auto", mt: 8, p: 4, boxShadow: 3, borderRadius: 2 }}>
       <Typography variant="h5" gutterBottom>Вход с помощью ЭЦП</Typography>
-      <Alert severity="info" sx={{ mb: 2 }}>
-        Если вы только что вставили токен, подождите несколько секунд и нажмите <b>«Обновить сертификаты»</b>.<br/>
-        Если сертификаты не появились — попробуйте ещё раз.
-      </Alert>
       {/* Кнопка для вывода всех сертификатов в консоль */}
       <Button 
         variant="outlined" 
@@ -273,6 +267,10 @@ const EcpAuth = () => {
             InputProps={{ readOnly: true }}
             sx={{ mb: 2 }}
           />
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Если вы только что вставили токен, подождите несколько секунд и нажмите <b>«Обновить сертификаты»</b>.<br/>
+            Если сертификаты не появились — попробуйте ещё раз.
+          </Alert>
           <Tooltip title="Если вы только что вставили токен, подождите пару секунд и нажмите ещё раз!">
             <Button variant="outlined" fullWidth onClick={getCertificates} sx={{ mb: 2 }} disabled={certLoading}>
               {certLoading ? <CircularProgress size={24} /> : "Обновить сертификаты"}

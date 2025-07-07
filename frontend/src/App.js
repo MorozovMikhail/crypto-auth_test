@@ -13,7 +13,8 @@ import {
   Alert,
   Divider,
   Tabs,
-  Tab
+  Tab,
+  Tooltip
 } from '@mui/material';
 import cadesplugin from 'crypto-pro-cadesplugin';
 import EcpAuth from './components/EcpAuth';
@@ -60,6 +61,45 @@ function App() {
 
   const loadCertificates = async () => {
     try {
+      setLoading(true);
+      setError(null);
+      setCertificates([]);
+      // 1. Пробуем window.crypto_pro.getCertificates
+      if (window.crypto_pro && typeof window.crypto_pro.getCertificates === 'function') {
+        try {
+          console.log('Используется window.crypto_pro.getCertificates');
+          window.crypto_pro.getCertificates(function(certs) {
+            if (!certs || certs.length === 0) {
+              setError('Нет доступных сертификатов (crypto_pro.getCertificates)');
+              setCertificates([]);
+              setLoading(false);
+              return;
+            }
+            console.log('Сертификаты (crypto_pro):', certs);
+            const certList = certs.map((c, idx) => ({
+              thumbprint: c.thumbprint || c.Thumbprint || '',
+              subjectName: c.subject || c.subjectName || `Сертификат ${idx+1}`,
+              issuerInfo: c.issuer || c.issuerName || '',
+              validFrom: c.validFrom || '',
+              validTo: c.validTo || '',
+              serialNumber: c.serialNumber || '',
+              source: 'crypto_pro.getCertificates',
+              rawCert: c
+            }));
+            setCertificates(certList);
+            setSelectedCert(certList[0]?.thumbprint || '');
+            setError(null);
+            setLoading(false);
+          });
+          return;
+        } catch (e) {
+          console.error('Ошибка при работе с crypto_pro.getCertificates:', e);
+          setError('Ошибка при работе с crypto_pro.getCertificates: ' + e.message);
+          setLoading(false);
+          return;
+        }
+      }
+      // 2. Fallback: CAdESCOM.Store
       const certList = [];
       // Обычное хранилище (контейнеры)
       try {
@@ -130,6 +170,8 @@ function App() {
     } catch (err) {
       console.error('Certificate loading error:', err);
       setError('Ошибка при загрузке сертификатов: ' + (err.message || err.toString()));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -270,6 +312,21 @@ function App() {
             </Button>
 
             <Divider sx={{ width: '100%', mb: 3 }} />
+
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Если вы только что вставили токен, подождите несколько секунд и нажмите <b>«Обновить сертификаты»</b>.<br/>
+              Если сертификаты не появились — попробуйте ещё раз.
+            </Alert>
+            <Tooltip title="Если вы только что вставили токен, подождите пару секунд и нажмите ещё раз!">
+              <Button
+                variant="contained"
+                onClick={loadCertificates}
+                disabled={loading}
+                sx={{ mb: 3, width: '100%' }}
+              >
+                {loading ? <CircularProgress size={24} /> : 'Обновить сертификаты'}
+              </Button>
+            </Tooltip>
 
             <FormControl fullWidth sx={{ mb: 2 }}>
               <InputLabel>Выберите сертификат</InputLabel>

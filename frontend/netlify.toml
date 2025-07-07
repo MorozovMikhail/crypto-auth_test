@@ -1,8 +1,15 @@
 [build]
-  command = "npm run build"
   publish = "build"
+  command = "npm run build"
 
 [[redirects]]
   from = "/*"
   to = "/index.html"
-  status = 200 
+  status = 200
+
+# Если нужен прокси для API, раскомментируйте и настройте:
+# [[redirects]]
+#   from = "/api/*"
+#   to = "http://localhost:8080/api/:splat"
+#   status = 200
+#   force = true 

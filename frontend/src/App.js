@@ -16,7 +16,6 @@ import {
   Tab,
   Tooltip
 } from '@mui/material';
-import cadesplugin from 'crypto-pro-cadesplugin';
 import EcpAuth from './components/EcpAuth';
 import CertificateList from './components/CertificateList';
 
@@ -35,19 +34,13 @@ function App() {
   useEffect(() => {
     const checkPluginAndLoadCertificates = async () => {
       try {
-        // Получаем функцию инициализации плагина
-        const cadesPluginInitFunction = await cadesplugin;
-        // Вызываем эту функцию, чтобы получить объект API плагина
-        const certsApi = await cadesPluginInitFunction();
-
-        console.log('Полученный объект cadesplugin API:', certsApi);
-        // Проверяем, доступны ли основные методы API
-        if (certsApi && typeof certsApi.getCertsList === 'function') {
+        // Проверяем наличие window.cadesplugin
+        if (window.cadesplugin && window.cadesplugin.CreateObjectAsync) {
           setPluginStatus('ready');
           await loadCertificates();
         } else {
-          setPluginStatus('error');
-          setError('Ошибка инициализации плагина CryptoPro: API методы недоступны. Убедитесь, что КриптоПро ЭЦП Browser plug-in установлен и корректно настроен.');
+          setPluginStatus('not_found');
+          setError('Плагин CryptoPro не найден или не инициализирован. Убедитесь, что КриптоПро ЭЦП Browser plug-in установлен и корректно подключён.');
         }
       } catch (err) {
         console.error('Plugin check error:', err);
@@ -60,14 +53,19 @@ function App() {
   }, []);
 
   const loadCertificates = async () => {
+    setLoading(true);
+    setError(null);
+    setCertificates([]);
+    // Проверка наличия плагина — до любых логов и обращений
+    if (!window.cadesplugin || !window.cadesplugin.CreateObjectAsync) {
+      setError('Плагин КриптоПро не найден или не инициализирован.');
+      setLoading(false);
+      return;
+    }
     try {
-      setLoading(true);
-      setError(null);
-      setCertificates([]);
       // 1. Пробуем window.crypto_pro.getCertificates
       if (window.crypto_pro && typeof window.crypto_pro.getCertificates === 'function') {
         try {
-          console.log('Используется window.crypto_pro.getCertificates');
           window.crypto_pro.getCertificates(function(certs) {
             if (!certs || certs.length === 0) {
               setError('Нет доступных сертификатов (crypto_pro.getCertificates)');
@@ -75,7 +73,6 @@ function App() {
               setLoading(false);
               return;
             }
-            console.log('Сертификаты (crypto_pro):', certs);
             const certList = certs.map((c, idx) => ({
               thumbprint: c.thumbprint || c.Thumbprint || '',
               subjectName: c.subject || c.subjectName || `Сертификат ${idx+1}`,
@@ -93,7 +90,6 @@ function App() {
           });
           return;
         } catch (e) {
-          console.error('Ошибка при работе с crypto_pro.getCertificates:', e);
           setError('Ошибка при работе с crypto_pro.getCertificates: ' + e.message);
           setLoading(false);
           return;
@@ -103,46 +99,38 @@ function App() {
       const certList = [];
       // Обычное хранилище (контейнеры)
       try {
-        console.log('Пробуем открыть контейнеры (MAXIMUM_ALLOWED)');
         const store1 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-        // CAPICOM_CURRENT_USER_STORE = 2, CAPICOM_MY_STORE = "My", CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED = 2
         await store1.Open(2, "My", 2);
         const certs1 = await store1.Certificates;
         const count1 = await certs1.Count;
-        console.log(`Найдено сертификатов в контейнерах: ${count1}`);
         for (let i = 1; i <= count1; i++) {
           const cert = await certs1.Item(i);
           const thumbprint = await cert.Thumbprint;
           const subjectName = await cert.SubjectName;
           certList.push({ thumbprint, subjectName, source: 'Контейнер (личное хранилище)' });
-          try { console.log('[Контейнер] thumbprint:', thumbprint, 'subject:', subjectName); } catch (e) {}
         }
       } catch (e) {
-        console.error('Ошибка открытия контейнеров:', e);
+        setError('Ошибка открытия контейнеров: ' + (e.message || String(e)));
       }
       // Внешние устройства (токены) — перебор всех возможных типов
-      const tokenStoreTypes = [3, 4, 5, 6]; // CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER = 3, ...
+      const tokenStoreTypes = [3, 4, 5, 6];
       for (const type of tokenStoreTypes) {
         try {
-          console.log(`Пробуем открыть токены (тип ${type})`);
           const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
           await store.Open(2, "My", type);
           const certs = await store.Certificates;
           const count = await certs.Count;
-          console.log(`Найдено сертификатов в токенах (тип ${type}): ${count}`);
           for (let i = 1; i <= count; i++) {
             const cert = await certs.Item(i);
             const thumbprint = await cert.Thumbprint;
             const subjectName = await cert.SubjectName;
             certList.push({ thumbprint, subjectName, source: `Токен (тип ${type})` });
-            try { console.log(`[${type}] thumbprint:`, thumbprint, 'subject:', subjectName); } catch (e) {}
           }
         } catch (e) {
           if (e && (e.message?.includes('0x80070057') || String(e).includes('0x80070057'))) {
-            console.warn(`Тип токена ${type} не поддерживается или не готов (0x80070057)`);
             continue;
           } else {
-            console.error(`Ошибка открытия токенов (тип ${type}):`, e);
+            setError(`Ошибка открытия токенов (тип ${type}): ` + (e.message || String(e)));
           }
         }
       }
@@ -150,13 +138,10 @@ function App() {
         setError('Сертификаты не найдены. Убедитесь, что у вас есть установленные и действительные сертификаты.');
       } else {
         setCertificates(certList); // Без удаления дубликатов!
-        setSelectedCert(certList[0].thumbprint);
+        setSelectedCert(certList[0]?.thumbprint || '');
         setError(null);
-        console.log('Загружено сертификатов (всего, с возможными дублями):', certList.length);
-        console.log('Сертификаты:', certList);
       }
     } catch (err) {
-      console.error('Certificate loading error:', err);
       setError('Ошибка при загрузке сертификатов: ' + (err.message || err.toString()));
     } finally {
       setLoading(false);
@@ -168,54 +153,58 @@ function App() {
     try {
       setConsoleLogging(true);
       setError(null);
-
-      // Получаем функцию инициализации плагина
-      const cadesPluginInitFunction = await cadesplugin;
-      const certsApi = await cadesPluginInitFunction();
-
+      // Проверка наличия плагина
+      if (!window.cadesplugin || !window.cadesplugin.CreateObjectAsync) {
+        setError('Плагин КриптоПро не найден или не инициализирован.');
+        setConsoleLogging(false);
+        return;
+      }
       console.log('=== НАЧАЛО ВЫВОДА ВСЕХ СЕРТИФИКАТОВ ===');
-      
-      // Получаем список всех сертификатов
-      const certList = await certsApi.getCertsList();
-      
-      console.log(`Найдено сертификатов: ${certList.length}`);
-      
-      if (certList.length === 0) {
+      // Обычное хранилище
+      const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+      await store.Open(2, "My", 2); // CAPICOM_CURRENT_USER_STORE = 2, CAPICOM_MY_STORE = "My", CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED = 2
+      const certs = await store.Certificates;
+      const count = await certs.Count;
+      // Внешние устройства (токены)
+      const tokenStoreTypes = [3, 4, 5, 6]; // CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER = 3, ...
+      let allCerts = [];
+      for (let i = 1; i <= count; i++) {
+        allCerts.push(await certs.Item(i));
+      }
+      for (const type of tokenStoreTypes) {
+        try {
+          if (!window.cadesplugin || !window.cadesplugin.CreateObjectAsync) throw new Error('Плагин не инициализирован');
+          const storeToken = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+          await storeToken.Open(2, "My", type);
+          const certsToken = await storeToken.Certificates;
+          const countToken = await certsToken.Count;
+          for (let i = 1; i <= countToken; i++) {
+            allCerts.push(await certsToken.Item(i));
+          }
+        } catch (e) {
+          console.warn(`Ошибка открытия токенов (тип ${type}):`, e);
+        }
+      }
+      console.log(`Найдено сертификатов: ${allCerts.length}`);
+      if (allCerts.length === 0) {
         console.log('Сертификаты не найдены');
         setError('Сертификаты не найдены');
         return;
       }
-
-      // Выводим информацию о каждом сертификате
-      certList.forEach((cert, index) => {
-        console.log(`\n--- Сертификат ${index + 1} ---`);
-        console.log('Thumbprint:', cert.thumbprint);
-        console.log('Subject Name:', cert.subjectInfo);
-        
-        // Попробуем получить дополнительную информацию, если доступна
-        if (cert.issuerInfo) {
-          console.log('Issuer Name:', cert.issuerInfo);
-        }
-        if (cert.validFrom) {
-          console.log('Valid From:', cert.validFrom);
-        }
-        if (cert.validTo) {
-          console.log('Valid To:', cert.validTo);
-        }
-        if (cert.serialNumber) {
-          console.log('Serial Number:', cert.serialNumber);
-        }
-        
-        // Выводим все доступные свойства сертификата
-        console.log('Все свойства сертификата:', Object.keys(cert));
+      for (let i = 0; i < allCerts.length; i++) {
+        const cert = allCerts[i];
+        console.log(`\n--- Сертификат ${i + 1} ---`);
+        try { console.log('Subject Name:', await cert.SubjectName); } catch (e) {}
+        try { console.log('Issuer Name:', await cert.IssuerName); } catch (e) {}
+        try { console.log('Valid From:', await cert.ValidFromDate); } catch (e) {}
+        try { console.log('Valid To:', await cert.ValidToDate); } catch (e) {}
+        try { console.log('Serial Number:', await cert.SerialNumber); } catch (e) {}
+        try { console.log('Thumbprint:', await cert.Thumbprint); } catch (e) {}
+        console.log('Доступные методы сертификата:', Object.getOwnPropertyNames(Object.getPrototypeOf(cert)));
         console.log('Полный объект сертификата:', cert);
-      });
-
+      }
       console.log('\n=== КОНЕЦ ВЫВОДА ВСЕХ СЕРТИФИКАТОВ ===');
-      
-      // Также выводим в alert для удобства
-      alert(`Найдено ${certList.length} сертификатов. Подробная информация выведена в консоль браузера (F12 -> Console)`);
-      
+      alert(`Найдено ${allCerts.length} сертификатов. Подробная информация выведена в консоль браузера (F12 -> Console)`);
     } catch (err) {
       console.error('Ошибка при выводе сертификатов в консоль:', err);
       setError('Ошибка при выводе сертификатов: ' + (err.message || err.toString()));
@@ -228,28 +217,69 @@ function App() {
     try {
       setLoading(true);
       setError(null);
-
       if (!selectedCert) {
         throw new Error('Выберите сертификат');
       }
-
+      // Проверка наличия плагина
+      if (!window.cadesplugin || !window.cadesplugin.CreateObjectAsync) {
+        setError('Плагин КриптоПро не найден или не инициализирован.');
+        setLoading(false);
+        return;
+      }
       // Генерируем уникальный идентификатор сессии
       const sessionId = Math.random().toString(36).substring(7);
-      
       // Получаем challenge от сервера
       const response = await fetch(`${API_BASE_URL}/api/auth/challenge?sessionId=${sessionId}`);
       const { challenge } = await response.json();
-
-      // Используем методы пакета для подписи
-      const certsApi = await (await cadesplugin)();
-      const signature = await certsApi.signBase64(selectedCert, btoa(challenge), 0); // 0 для CAPICOM_BASE64_ENCODING
-      
-      // Получаем сертификат в формате Base64 (пакет не предоставляет прямого метода, поэтому оставим это как есть, если это работает)
-      // Возможно, потребуется дополнительная логика для получения certBase64, если пакет не возвращает его.
-      // Для тестовых целей, пока не меняем эту часть, если она работала ранее.
-      const cert = (await certsApi.getCertsList()).find(c => c.thumbprint === selectedCert);
-      const certBase64 = cert ? await cert.Export(0) : null; // Экспорт сертификата
-
+      // Находим сертификат по отпечатку
+      let certObj = null;
+      // Обычное хранилище
+      const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+      await store.Open(2, "My", 2);
+      const certs = await store.Certificates;
+      const count = await certs.Count;
+      for (let i = 1; i <= count; i++) {
+        const cert = await certs.Item(i);
+        const thumbprint = await cert.Thumbprint;
+        if (thumbprint === selectedCert) {
+          certObj = cert;
+          break;
+        }
+      }
+      // Если не найдено — ищем в токенах
+      if (!certObj) {
+        const tokenStoreTypes = [3, 4, 5, 6];
+        for (const type of tokenStoreTypes) {
+          try {
+            if (!window.cadesplugin || !window.cadesplugin.CreateObjectAsync) throw new Error('Плагин не инициализирован');
+            const storeToken = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+            await storeToken.Open(2, "My", type);
+            const certsToken = await storeToken.Certificates;
+            const countToken = await certsToken.Count;
+            for (let i = 1; i <= countToken; i++) {
+              const cert = await certsToken.Item(i);
+              const thumbprint = await cert.Thumbprint;
+              if (thumbprint === selectedCert) {
+                certObj = cert;
+                break;
+              }
+            }
+            if (certObj) break;
+          } catch (e) {}
+        }
+      }
+      if (!certObj) throw new Error('Сертификат не найден');
+      // Подписываем challenge
+      const signer = await window.cadesplugin.CreateObjectAsync("CAdESCOM.CPSigner");
+      await signer.propset_Certificate(certObj);
+      const signedData = await window.cadesplugin.CreateObjectAsync("CAdESCOM.CadesSignedData");
+      await signedData.propset_Content(challenge);
+      const signature = await signedData.SignCades(
+        signer,
+        window.cadesplugin.CADES_BES,
+        true
+      );
+      const certBase64 = await certObj.Export(window.cadesplugin.CAPICOM_ENCODE_BASE64);
       // Отправляем подпись на сервер
       const verifyResponse = await fetch(`${API_BASE_URL}/api/auth/verify`, {
         method: 'POST',
@@ -260,12 +290,10 @@ function App() {
           sessionId,
           challenge,
           signature,
-          certificate: certBase64 // Передаем base64 сертификата
+          certificate: certBase64
         }),
       });
-
       const result = await verifyResponse.json();
-      
       if (result.success) {
         console.log('Авторизация успешна');
       } else {
@@ -284,71 +312,8 @@ function App() {
   };
 
   const renderTabContent = () => {
-    switch (activeTab) {
-      case 0:
-        return (
-          <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            {/* Кнопка для вывода всех сертификатов в консоль */}
-            <Button
-              variant="outlined"
-              color="secondary"
-              onClick={logAllCertificatesToConsole}
-              disabled={consoleLogging}
-              sx={{ mb: 3, width: '100%' }}
-            >
-              {consoleLogging ? <CircularProgress size={24} /> : 'Вывести все сертификаты в консоль'}
-            </Button>
-
-            <Divider sx={{ width: '100%', mb: 3 }} />
-
-            <Alert severity="info" sx={{ mb: 2 }}>
-              Если вы только что вставили токен, подождите несколько секунд и нажмите <b>«Обновить сертификаты»</b>.<br/>
-              Если сертификаты не появились — попробуйте ещё раз.
-            </Alert>
-            <Tooltip title="Если вы только что вставили токен, подождите пару секунд и нажмите ещё раз!">
-              <Button
-                variant="contained"
-                onClick={loadCertificates}
-                disabled={loading}
-                sx={{ mb: 3, width: '100%' }}
-              >
-                {loading ? <CircularProgress size={24} /> : 'Обновить сертификаты'}
-              </Button>
-            </Tooltip>
-
-            <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Выберите сертификат</InputLabel>
-              <Select
-                value={selectedCert}
-                onChange={(e) => setSelectedCert(e.target.value)}
-                label="Выберите сертификат"
-              >
-                {certificates.map((cert) => (
-                  <MenuItem key={cert.thumbprint} value={cert.thumbprint}>
-                    {cert.subjectName} ({cert.source})
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={handleSignIn}
-              disabled={loading || !selectedCert}
-              sx={{ mt: 2 }}
-            >
-              {loading ? <CircularProgress size={24} /> : 'Войти с помощью ЭЦП'}
-            </Button>
-          </Box>
-        );
-      case 1:
-        return <EcpAuth />;
-      case 2:
-        return <CertificateList />;
-      default:
-        return null;
-    }
+    // Оставляем только альтернативную авторизацию, переименованную в 'Авторизация'
+    return <EcpAuth />;
   };
 
   return (
@@ -356,33 +321,21 @@ function App() {
       <Box sx={{ mt: 4 }}>
         <Paper elevation={3} sx={{ p: 4 }}>
           <Typography variant="h4" component="h1" gutterBottom align="center">
-            Авторизация с помощью ЭЦП
+            Авторизация
           </Typography>
-          
           {pluginStatus === 'checking' && (
             <Alert severity="info" sx={{ mb: 2 }}>
               Проверка плагина CryptoPro...
             </Alert>
           )}
-          
           {pluginStatus === 'not_found' && (
             <Alert severity="error" sx={{ mb: 2 }}>
               Плагин CryptoPro не установлен или произошла ошибка при его инициализации. Пожалуйста, убедитесь, что КриптоПро ЭЦП Browser plug-in установлен и корректно настроен.
             </Alert>
           )}
-          
           {pluginStatus === 'ready' && (
-            <>
-              <Tabs value={activeTab} onChange={handleTabChange} sx={{ mb: 3 }}>
-                <Tab label="Основная авторизация" />
-                <Tab label="Альтернативная авторизация" />
-                <Tab label="Список сертификатов" />
-              </Tabs>
-              
-              {renderTabContent()}
-            </>
+            <>{renderTabContent()}</>
           )}
-          
           {error && (
             <Alert severity="error" sx={{ mt: 2 }}>
               {error}

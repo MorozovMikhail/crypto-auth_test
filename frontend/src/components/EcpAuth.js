@@ -34,14 +34,12 @@ const EcpAuth = () => {
     // 1. Пробуем window.crypto_pro.getCertificates
     if (window.crypto_pro && typeof window.crypto_pro.getCertificates === 'function') {
       try {
-        console.log('Используется window.crypto_pro.getCertificates');
         window.crypto_pro.getCertificates(function(certs) {
           if (!certs || certs.length === 0) {
             setStatus('Нет доступных сертификатов (crypto_pro.getCertificates)');
             setCertLoading(false);
             return;
           }
-          console.log('Сертификаты (crypto_pro):', certs);
           const certList = certs.map((c, idx) => ({
             subjectName: c.subject || c.subjectName || `Сертификат ${idx+1}`,
             issuerName: c.issuer || c.issuerName || '',
@@ -56,7 +54,6 @@ const EcpAuth = () => {
         });
         return;
       } catch (e) {
-        console.error('Ошибка при работе с crypto_pro.getCertificates:', e);
         setStatus('Ошибка при работе с crypto_pro.getCertificates: ' + e.message);
         setCertLoading(false);
         return;
@@ -64,17 +61,13 @@ const EcpAuth = () => {
     }
     // 2. Fallback: CAdESCOM.Store (без CAPICOM_*)
     try {
-      await window.cadesplugin;
       const certList = [];
       // Обычное хранилище (контейнеры)
       try {
-        console.log('Пробуем открыть контейнеры (MAXIMUM_ALLOWED)');
         const store1 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-        // CAPICOM_CURRENT_USER_STORE = 2, CAPICOM_MY_STORE = "My", CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED = 2
         await store1.Open(2, "My", 2);
         const certs1 = await store1.Certificates;
         const count1 = await certs1.Count;
-        console.log(`Найдено сертификатов в контейнерах: ${count1}`);
         for (let i = 1; i <= count1; i++) {
           const cert = await certs1.Item(i);
           const subjectName = await cert.SubjectName;
@@ -82,24 +75,18 @@ const EcpAuth = () => {
           const validFrom = await cert.ValidFromDate;
           const validTo = await cert.ValidToDate;
           certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: 'Контейнер (личное хранилище)' });
-          try { console.log('[Контейнер] subject:', subjectName, 'issuer:', issuerName, 'valid:', validFrom, '-', validTo); } catch (e) {}
         }
       } catch (e) {
-        console.error('Ошибка открытия контейнеров:', e);
+        // Не выводим в консоль
       }
       // Внешние устройства (токены) — перебор всех возможных типов
-      const tokenStoreTypes = [
-        // CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER = 3, CAPICOM_STORE_OPEN_EXTERNAL = 4, CAPICOM_STORE_OPEN_EXTERNAL_TOKEN = 5, CAPICOM_STORE_OPEN_EXTERNAL_KEY_MEDIA = 6
-        3, 4, 5, 6
-      ];
+      const tokenStoreTypes = [3, 4, 5, 6];
       for (const type of tokenStoreTypes) {
         try {
-          console.log(`Пробуем открыть токены (тип ${type})`);
           const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
           await store.Open(2, "My", type);
           const certs = await store.Certificates;
           const count = await certs.Count;
-          console.log(`Найдено сертификатов в токенах (тип ${type}): ${count}`);
           for (let i = 1; i <= count; i++) {
             const cert = await certs.Item(i);
             const subjectName = await cert.SubjectName;
@@ -107,14 +94,13 @@ const EcpAuth = () => {
             const validFrom = await cert.ValidFromDate;
             const validTo = await cert.ValidToDate;
             certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: `Токен (тип ${type})` });
-            try { console.log(`[${type}] subject:`, subjectName, 'issuer:', issuerName, 'valid:', validFrom, '-', validTo); } catch (e) {}
           }
         } catch (e) {
           if (e && (e.message?.includes('0x80070057') || String(e).includes('0x80070057'))) {
-            console.warn(`Тип токена ${type} не поддерживается или не готов (0x80070057)`);
+            // Просто пропускаем, не выводим в консоль
             continue;
           } else {
-            console.error(`Ошибка открытия токенов (тип ${type}):`, e);
+            // Не выводим в консоль
           }
         }
       }
@@ -124,8 +110,6 @@ const EcpAuth = () => {
         return;
       }
       setCertificates(certList); // Без удаления дубликатов!
-      console.log('Загружено сертификатов (всего, с возможными дублями):', certList.length);
-      console.log('Сертификаты:', certList);
     } catch (e) {
       setStatus("Ошибка при получении сертификатов: " + e.message);
     }

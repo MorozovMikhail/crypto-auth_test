@@ -146,9 +146,7 @@ const EcpAuth = () => {
     try {
       setConsoleLogging(true);
       setStatus("");
-
       console.log('=== НАЧАЛО ВЫВОДА ВСЕХ СЕРТИФИКАТОВ (EcpAuth) ===');
-      
       await window.cadesplugin;
       // Обычное хранилище
       const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
@@ -197,8 +195,13 @@ const EcpAuth = () => {
       console.log('\n=== КОНЕЦ ВЫВОДА ВСЕХ СЕРТИФИКАТОВ (EcpAuth) ===');
       alert(`Найдено ${allCerts.length} сертификатов. Подробная информация выведена в консоль браузера (F12 -> Console)`);
     } catch (e) {
-      console.error('Ошибка при выводе сертификатов в консоль:', e);
-      setStatus('Ошибка при выводе сертификатов: ' + e.message);
+      if (e && (e.message?.includes('0x80070057') || String(e).includes('0x80070057'))) {
+        console.warn('Ошибка 0x80070057: возможно, токен не готов или не поддерживается этим методом.');
+        setStatus('Не удалось вывести сертификаты в консоль: возможно, токен не готов или не поддерживается этим методом. Попробуйте обновить сертификаты через основную кнопку.');
+      } else {
+        console.error('Ошибка при выводе сертификатов в консоль:', e);
+        setStatus('Ошибка при выводе сертификатов: ' + (e.message || String(e)));
+      }
     } finally {
       setConsoleLogging(false);
     }

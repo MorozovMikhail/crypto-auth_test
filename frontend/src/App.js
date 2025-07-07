@@ -138,7 +138,12 @@ function App() {
             try { console.log(`[${type}] thumbprint:`, thumbprint, 'subject:', subjectName); } catch (e) {}
           }
         } catch (e) {
-          console.error(`Ошибка открытия токенов (тип ${type}):`, e);
+          if (e && (e.message?.includes('0x80070057') || String(e).includes('0x80070057'))) {
+            console.warn(`Тип токена ${type} не поддерживается или не готов (0x80070057)`);
+            continue;
+          } else {
+            console.error(`Ошибка открытия токенов (тип ${type}):`, e);
+          }
         }
       }
       if (certList.length === 0) {

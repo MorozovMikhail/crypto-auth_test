@@ -110,7 +110,12 @@ const EcpAuth = () => {
             try { console.log(`[${type}] subject:`, subjectName, 'issuer:', issuerName, 'valid:', validFrom, '-', validTo); } catch (e) {}
           }
         } catch (e) {
-          console.error(`Ошибка открытия токенов (тип ${type}):`, e);
+          if (e && (e.message?.includes('0x80070057') || String(e).includes('0x80070057'))) {
+            console.warn(`Тип токена ${type} не поддерживается или не готов (0x80070057)`);
+            continue;
+          } else {
+            console.error(`Ошибка открытия токенов (тип ${type}):`, e);
+          }
         }
       }
       if (certList.length === 0) {

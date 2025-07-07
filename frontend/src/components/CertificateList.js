@@ -84,18 +84,15 @@ const CertificateList = () => {
         return;
       }
     }
-    // 2. Fallback: CAdESCOM.Store
+    // 2. Fallback: CAdESCOM.Store (без CAPICOM_*)
     try {
       const certList = [];
       // Обычное хранилище (контейнеры)
       try {
         console.log('Пробуем открыть контейнеры (MAXIMUM_ALLOWED)');
         const store1 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-        await store1.Open(
-          window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
-          window.cadesplugin.CAPICOM_MY_STORE,
-          window.cadesplugin.CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED
-        );
+        // CAPICOM_CURRENT_USER_STORE = 2, CAPICOM_MY_STORE = "My", CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED = 2
+        await store1.Open(2, "My", 2);
         const certs1 = await store1.Certificates;
         const count1 = await certs1.Count;
         console.log(`Найдено сертификатов в контейнерах: ${count1}`);
@@ -123,29 +120,15 @@ const CertificateList = () => {
         console.error('Ошибка открытия контейнеров:', e);
       }
       // Внешние устройства (токены) — перебор всех возможных типов
-      const tokenStoreTypes = [
-        'CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER',
-        'CAPICOM_STORE_OPEN_EXTERNAL',
-        'CAPICOM_STORE_OPEN_EXTERNAL_TOKEN',
-        'CAPICOM_STORE_OPEN_EXTERNAL_KEY_MEDIA'
-      ];
-      for (const typeName of tokenStoreTypes) {
+      const tokenStoreTypes = [3, 4, 5, 6]; // CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER = 3, ...
+      for (const type of tokenStoreTypes) {
         try {
-          const type = window.cadesplugin[typeName];
-          if (typeof type === 'undefined') {
-            console.log(`Тип ${typeName} не поддерживается CSP/плагином`);
-            continue;
-          }
-          console.log(`Пробуем открыть токены (${typeName})`);
+          console.log(`Пробуем открыть токены (тип ${type})`);
           const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-          await store.Open(
-            window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
-            window.cadesplugin.CAPICOM_MY_STORE,
-            type
-          );
+          await store.Open(2, "My", type);
           const certs = await store.Certificates;
           const count = await certs.Count;
-          console.log(`Найдено сертификатов в токенах (${typeName}): ${count}`);
+          console.log(`Найдено сертификатов в токенах (тип ${type}): ${count}`);
           for (let i = 1; i <= count; i++) {
             const cert = await certs.Item(i);
             const thumbprint = await cert.Thumbprint;
@@ -161,13 +144,13 @@ const CertificateList = () => {
               validFrom,
               validTo,
               serialNumber,
-              source: `Токен (${typeName})`,
+              source: `Токен (тип ${type})`,
               rawCert: cert
             });
-            console.log(`[${typeName}] thumbprint:`, thumbprint, 'subject:', subjectName, 'issuer:', issuerInfo, 'valid:', validFrom, '-', validTo, 'serial:', serialNumber);
+            console.log(`[${type}] thumbprint:`, thumbprint, 'subject:', subjectName, 'issuer:', issuerInfo, 'valid:', validFrom, '-', validTo, 'serial:', serialNumber);
           }
         } catch (e) {
-          console.error(`Ошибка открытия токенов (${typeName}):`, e);
+          console.error(`Ошибка открытия токенов (тип ${type}):`, e);
         }
       }
       if (certList.length === 0) {

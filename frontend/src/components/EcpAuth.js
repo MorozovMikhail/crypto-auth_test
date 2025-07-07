@@ -62,7 +62,7 @@ const EcpAuth = () => {
         return;
       }
     }
-    // 2. Fallback: CAdESCOM.Store
+    // 2. Fallback: CAdESCOM.Store (без CAPICOM_*)
     try {
       await window.cadesplugin;
       const certList = [];
@@ -70,11 +70,8 @@ const EcpAuth = () => {
       try {
         console.log('Пробуем открыть контейнеры (MAXIMUM_ALLOWED)');
         const store1 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-        await store1.Open(
-          window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
-          window.cadesplugin.CAPICOM_MY_STORE,
-          window.cadesplugin.CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED
-        );
+        // CAPICOM_CURRENT_USER_STORE = 2, CAPICOM_MY_STORE = "My", CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED = 2
+        await store1.Open(2, "My", 2);
         const certs1 = await store1.Certificates;
         const count1 = await certs1.Count;
         console.log(`Найдено сертификатов в контейнерах: ${count1}`);
@@ -92,39 +89,28 @@ const EcpAuth = () => {
       }
       // Внешние устройства (токены) — перебор всех возможных типов
       const tokenStoreTypes = [
-        'CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER',
-        'CAPICOM_STORE_OPEN_EXTERNAL',
-        'CAPICOM_STORE_OPEN_EXTERNAL_TOKEN',
-        'CAPICOM_STORE_OPEN_EXTERNAL_KEY_MEDIA'
+        // CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER = 3, CAPICOM_STORE_OPEN_EXTERNAL = 4, CAPICOM_STORE_OPEN_EXTERNAL_TOKEN = 5, CAPICOM_STORE_OPEN_EXTERNAL_KEY_MEDIA = 6
+        3, 4, 5, 6
       ];
-      for (const typeName of tokenStoreTypes) {
+      for (const type of tokenStoreTypes) {
         try {
-          const type = window.cadesplugin[typeName];
-          if (typeof type === 'undefined') {
-            console.log(`Тип ${typeName} не поддерживается CSP/плагином`);
-            continue;
-          }
-          console.log(`Пробуем открыть токены (${typeName})`);
+          console.log(`Пробуем открыть токены (тип ${type})`);
           const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-          await store.Open(
-            window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
-            window.cadesplugin.CAPICOM_MY_STORE,
-            type
-          );
+          await store.Open(2, "My", type);
           const certs = await store.Certificates;
           const count = await certs.Count;
-          console.log(`Найдено сертификатов в токенах (${typeName}): ${count}`);
+          console.log(`Найдено сертификатов в токенах (тип ${type}): ${count}`);
           for (let i = 1; i <= count; i++) {
             const cert = await certs.Item(i);
             const subjectName = await cert.SubjectName;
             const issuerName = await cert.IssuerName;
             const validFrom = await cert.ValidFromDate;
             const validTo = await cert.ValidToDate;
-            certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: `Токен (${typeName})` });
-            try { console.log(`[${typeName}] subject:`, subjectName, 'issuer:', issuerName, 'valid:', validFrom, '-', validTo); } catch (e) {}
+            certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: `Токен (тип ${type})` });
+            try { console.log(`[${type}] subject:`, subjectName, 'issuer:', issuerName, 'valid:', validFrom, '-', validTo); } catch (e) {}
           }
         } catch (e) {
-          console.error(`Ошибка открытия токенов (${typeName}):`, e);
+          console.error(`Ошибка открытия токенов (тип ${type}):`, e);
         }
       }
       if (certList.length === 0) {
@@ -150,29 +136,27 @@ const EcpAuth = () => {
       await window.cadesplugin;
       // Обычное хранилище
       const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-      await store.Open(
-        window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
-        window.cadesplugin.CAPICOM_MY_STORE,
-        window.cadesplugin.CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED
-      );
+      await store.Open(2, "My", 2); // CAPICOM_CURRENT_USER_STORE = 2, CAPICOM_MY_STORE = "My", CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED = 2
       const certs = await store.Certificates;
       const count = await certs.Count;
       // Внешние устройства (токены)
-      const storeToken = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-      await storeToken.Open(
-        window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
-        window.cadesplugin.CAPICOM_MY_STORE,
-        window.cadesplugin.CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER
-      );
-      const certsToken = await storeToken.Certificates;
-      const countToken = await certsToken.Count;
-      // Собираем все сертификаты
+      const tokenStoreTypes = [3, 4, 5, 6]; // CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER = 3, ...
       let allCerts = [];
       for (let i = 1; i <= count; i++) {
         allCerts.push(await certs.Item(i));
       }
-      for (let i = 1; i <= countToken; i++) {
-        allCerts.push(await certsToken.Item(i));
+      for (const type of tokenStoreTypes) {
+        try {
+          const storeToken = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+          await storeToken.Open(2, "My", type);
+          const certsToken = await storeToken.Certificates;
+          const countToken = await certsToken.Count;
+          for (let i = 1; i <= countToken; i++) {
+            allCerts.push(await certsToken.Item(i));
+          }
+        } catch (e) {
+          console.warn(`Ошибка открытия токенов (тип ${type}):`, e);
+        }
       }
       console.log(`Найдено сертификатов: ${allCerts.length}`);
       if (allCerts.length === 0) {

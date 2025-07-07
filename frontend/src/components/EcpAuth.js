@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button, TextField, Typography, Box, Alert, CircularProgress, MenuItem, Select, FormControl, InputLabel, List, ListItem, ListItemText, Divider, Tooltip } from "@mui/material";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8080/api/auth";
@@ -8,15 +8,26 @@ const EcpAuth = () => {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [certLoading, setCertLoading] = useState(false);
-  const [consoleLogging, setConsoleLogging] = useState(false);
   const [sessionId] = useState(() => Math.random().toString(36).substring(2));
   const [certificates, setCertificates] = useState([]);
   const [selectedCertIndex, setSelectedCertIndex] = useState("");
   const [certInfo, setCertInfo] = useState(null);
+  const [certsRequested, setCertsRequested] = useState(false);
+
+  // Гарантированный сброс статуса и certsRequested при первом рендере и при каждом рендере, если certsRequested === false
+  useEffect(() => {
+    if (!certsRequested) {
+      setStatus("");
+    }
+  }, [certsRequested]);
 
   // Получение challenge с сервера
   const getChallenge = async () => {
     setStatus("");
+    setCertsRequested(false); // Сброс флага при получении challenge
+    setCertificates([]);      // Сброс найденных сертификатов
+    setSelectedCertIndex("");
+    setCertInfo(null);
     setLoading(true);
     setChallenge("");
     const res = await fetch(`${API_URL}/challenge?sessionId=${sessionId}`);
@@ -26,17 +37,18 @@ const EcpAuth = () => {
   };
 
   // Универсальная функция получения сертификатов
-  const getCertificates = async () => {
+  const getCertificates = async (showNotFound = true) => {
     setCertLoading(true);
     setCertificates([]);
     setSelectedCertIndex("");
     setCertInfo(null);
+    let found = false;
     // 1. Пробуем window.crypto_pro.getCertificates
     if (window.crypto_pro && typeof window.crypto_pro.getCertificates === 'function') {
       try {
         window.crypto_pro.getCertificates(function(certs) {
           if (!certs || certs.length === 0) {
-            setStatus('Нет доступных сертификатов (crypto_pro.getCertificates)');
+            if (showNotFound) setStatus('Нет доступных сертификатов (crypto_pro.getCertificates)');
             setCertLoading(false);
             return;
           }
@@ -76,10 +88,8 @@ const EcpAuth = () => {
           const validTo = await cert.ValidToDate;
           certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: 'Контейнер (личное хранилище)' });
         }
-      } catch (e) {
-        // Не выводим в консоль
-      }
-      // Внешние устройства (токены) — перебор всех возможных типов
+      } catch (e) {}
+      // Внешние устройства (токены)
       const tokenStoreTypes = [3, 4, 5, 6];
       for (const type of tokenStoreTypes) {
         try {
@@ -95,93 +105,24 @@ const EcpAuth = () => {
             const validTo = await cert.ValidToDate;
             certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: `Токен (тип ${type})` });
           }
-        } catch (e) {
-          if (e && (e.message?.includes('0x80070057') || String(e).includes('0x80070057'))) {
-            // Просто пропускаем, не выводим в консоль
-            continue;
-          } else {
-            // Не выводим в консоль
-          }
-        }
+        } catch (e) {}
       }
       if (certList.length === 0) {
-        setStatus("Нет доступных сертификатов.");
+        if (showNotFound) setStatus("Сертификаты не найдены. Убедитесь, что у вас есть установленные и действительные сертификаты.");
         setCertLoading(false);
         return;
       }
-      setCertificates(certList); // Без удаления дубликатов!
+      setCertificates(certList);
+      setStatus("");
     } catch (e) {
       setStatus("Ошибка при получении сертификатов: " + e.message);
     }
     setCertLoading(false);
   };
 
-  // Новая функция для вывода всех сертификатов в консоль
-  const logAllCertificatesToConsole = async () => {
-    try {
-      setConsoleLogging(true);
-      setStatus("");
-      console.log('=== НАЧАЛО ВЫВОДА ВСЕХ СЕРТИФИКАТОВ (EcpAuth) ===');
-      await window.cadesplugin;
-      // Обычное хранилище
-      const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-      await store.Open(2, "My", 2); // CAPICOM_CURRENT_USER_STORE = 2, CAPICOM_MY_STORE = "My", CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED = 2
-      const certs = await store.Certificates;
-      const count = await certs.Count;
-      // Внешние устройства (токены)
-      const tokenStoreTypes = [3, 4, 5, 6]; // CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER = 3, ...
-      let allCerts = [];
-      for (let i = 1; i <= count; i++) {
-        allCerts.push(await certs.Item(i));
-      }
-      for (const type of tokenStoreTypes) {
-        try {
-          const storeToken = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-          await storeToken.Open(2, "My", type);
-          const certsToken = await storeToken.Certificates;
-          const countToken = await certsToken.Count;
-          for (let i = 1; i <= countToken; i++) {
-            allCerts.push(await certsToken.Item(i));
-          }
-        } catch (e) {
-          console.warn(`Ошибка открытия токенов (тип ${type}):`, e);
-        }
-      }
-      console.log(`Найдено сертификатов: ${allCerts.length}`);
-      if (allCerts.length === 0) {
-        console.log('Сертификаты не найдены');
-        setStatus('Сертификаты не найдены');
-        return;
-      }
-      for (let i = 0; i < allCerts.length; i++) {
-        const cert = allCerts[i];
-        console.log(`\n--- Сертификат ${i + 1} ---`);
-        try { console.log('Subject Name:', await cert.SubjectName); } catch (e) {}
-        try { console.log('Issuer Name:', await cert.IssuerName); } catch (e) {}
-        try { console.log('Valid From:', await cert.ValidFromDate); } catch (e) {}
-        try { console.log('Valid To:', await cert.ValidToDate); } catch (e) {}
-        try { console.log('Serial Number:', await cert.SerialNumber); } catch (e) {}
-        try { console.log('Thumbprint:', await cert.Thumbprint); } catch (e) {}
-        console.log('Доступные методы сертификата:', Object.getOwnPropertyNames(Object.getPrototypeOf(cert)));
-        console.log('Полный объект сертификата:', cert);
-      }
-      console.log('\n=== КОНЕЦ ВЫВОДА ВСЕХ СЕРТИФИКАТОВ (EcpAuth) ===');
-      alert(`Найдено ${allCerts.length} сертификатов. Подробная информация выведена в консоль браузера (F12 -> Console)`);
-    } catch (e) {
-      if (e && (e.message?.includes('0x80070057') || String(e).includes('0x80070057'))) {
-        console.warn('Ошибка 0x80070057: возможно, токен не готов или не поддерживается этим методом.');
-        setStatus('Не удалось вывести сертификаты в консоль: возможно, токен не готов или не поддерживается этим методом. Попробуйте обновить сертификаты через основную кнопку.');
-      } else {
-        console.error('Ошибка при выводе сертификатов в консоль:', e);
-        setStatus('Ошибка при выводе сертификатов: ' + (e.message || String(e)));
-      }
-    } finally {
-      setConsoleLogging(false);
-    }
-  };
-
   // При выборе сертификата
   const handleCertChange = (event) => {
+    setStatus(""); // сбросить статус при выборе сертификата
     const idx = event.target.value;
     setSelectedCertIndex(idx);
     setCertInfo(certificates[idx]);
@@ -219,18 +160,6 @@ const EcpAuth = () => {
   return (
     <Box sx={{ maxWidth: 500, mx: "auto", mt: 8, p: 4, boxShadow: 3, borderRadius: 2 }}>
       <Typography variant="h5" gutterBottom>Вход с помощью ЭЦП</Typography>
-      {/* Кнопка для вывода всех сертификатов в консоль */}
-      <Button 
-        variant="outlined" 
-        color="secondary" 
-        fullWidth 
-        onClick={logAllCertificatesToConsole} 
-        sx={{ mb: 2 }} 
-        disabled={consoleLogging}
-      >
-        {consoleLogging ? <CircularProgress size={24} /> : "Вывести все сертификаты в консоль"}
-      </Button>
-      <Divider sx={{ mb: 2 }} />
       <Button variant="contained" fullWidth onClick={getChallenge} sx={{ mb: 2 }} disabled={loading}>
         {loading ? <CircularProgress size={24} /> : "Получить challenge"}
       </Button>
@@ -248,7 +177,7 @@ const EcpAuth = () => {
             Если сертификаты не появились — попробуйте ещё раз.
           </Alert>
           <Tooltip title="Если вы только что вставили токен, подождите пару секунд и нажмите ещё раз!">
-            <Button variant="outlined" fullWidth onClick={getCertificates} sx={{ mb: 2 }} disabled={certLoading}>
+            <Button variant="outlined" fullWidth onClick={() => { setCertsRequested(true); getCertificates(true); }} sx={{ mb: 2 }} disabled={certLoading}>
               {certLoading ? <CircularProgress size={24} /> : "Обновить сертификаты"}
             </Button>
           </Tooltip>
@@ -299,7 +228,7 @@ const EcpAuth = () => {
           </Button>
         </>
       )}
-      {status && <Alert severity={status.startsWith("Успеш") ? "success" : "error"} sx={{ mt: 2 }}>{status}</Alert>}
+      {status && certsRequested && <Alert severity={status.startsWith("Успеш") ? "success" : "error"} sx={{ mt: 2 }}>{status}</Alert>}
     </Box>
   );
 };

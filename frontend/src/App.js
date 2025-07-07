@@ -33,24 +33,14 @@ function App() {
   const [activeTab, setActiveTab] = useState(0);
 
   useEffect(() => {
-    const checkPluginAndLoadCertificates = async () => {
-      try {
-        // Проверяем наличие window.cadesplugin
-        if (window.cadesplugin && window.cadesplugin.CreateObjectAsync) {
-          setPluginStatus('ready');
-          await loadCertificates();
-        } else {
-          setPluginStatus('not_found');
-          setError('Плагин CryptoPro не найден или не инициализирован. Убедитесь, что КриптоПро ЭЦП Browser plug-in установлен и корректно подключён.');
-        }
-      } catch (err) {
-        console.error('Plugin check error:', err);
+    const checkPlugin = () => {
+      if (window.cadesplugin && window.cadesplugin.CreateObjectAsync) {
+        setPluginStatus('ready');
+      } else {
         setPluginStatus('not_found');
-        setError('Плагин CryptoPro не установлен или произошла ошибка при его инициализации. Пожалуйста, убедитесь, что КриптоПро ЭЦП Browser plug-in установлен и корректно настроен.\nОшибка: ' + (err.message || err.toString()));
       }
     };
-
-    checkPluginAndLoadCertificates();
+    checkPlugin();
   }, []);
 
   const loadCertificates = async () => {
@@ -335,12 +325,19 @@ function App() {
             </Alert>
           )}
           {pluginStatus === 'ready' && (
-            <>{renderTabContent()}</>
-          )}
-          {error && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {error}
-            </Alert>
+            <>
+              {error && (
+                <Alert severity="error" sx={{ mt: 2 }}>
+                  {error}
+                </Alert>
+              )}
+              {certificates.length > 0 && (
+                <>
+                  {/* Здесь может быть рендер списка сертификатов или другой UI */}
+                </>
+              )}
+              {renderTabContent()}
+            </>
           )}
         </Paper>
       </Box>

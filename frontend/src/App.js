@@ -43,7 +43,7 @@ function App() {
         // Проверяем, доступны ли основные методы API
         if (certsApi && typeof certsApi.getCertsList === 'function') {
           setPluginStatus('ready');
-          await loadCertificates(certsApi);
+          await loadCertificates();
         } else {
           setPluginStatus('error');
           setError('Ошибка инициализации плагина CryptoPro: API методы недоступны. Убедитесь, что КриптоПро ЭЦП Browser plug-in установлен и корректно настроен.');
@@ -58,45 +58,56 @@ function App() {
     checkPluginAndLoadCertificates();
   }, []);
 
-  const loadCertificates = async (certsApi) => {
+  const loadCertificates = async () => {
     try {
-      // Обычное хранилище
-      const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-      await store.Open(
-        window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
-        window.cadesplugin.CAPICOM_MY_STORE,
-        window.cadesplugin.CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED
-      );
-      const certs = await store.Certificates;
-      const count = await certs.Count;
-      // Внешние устройства (токены)
-      const storeToken = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-      await storeToken.Open(
-        window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
-        window.cadesplugin.CAPICOM_MY_STORE,
-        window.cadesplugin.CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER
-      );
-      const certsToken = await storeToken.Certificates;
-      const countToken = await certsToken.Count;
-      // Собираем все сертификаты
       const certList = [];
-      for (let i = 1; i <= count; i++) {
-        const cert = await certs.Item(i);
-        const thumbprint = await cert.Thumbprint;
-        const subjectName = await cert.SubjectName;
-        certList.push({ thumbprint, subjectName, source: 'Личное хранилище' });
+      // Обычное хранилище (контейнеры)
+      try {
+        const store1 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+        await store1.Open(
+          window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
+          window.cadesplugin.CAPICOM_MY_STORE,
+          window.cadesplugin.CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED
+        );
+        const certs1 = await store1.Certificates;
+        const count1 = await certs1.Count;
+        for (let i = 1; i <= count1; i++) {
+          const cert = await certs1.Item(i);
+          const thumbprint = await cert.Thumbprint;
+          const subjectName = await cert.SubjectName;
+          certList.push({ thumbprint, subjectName, source: 'Контейнер (личное хранилище)' });
+        }
+      } catch (e) {
+        // Не критично, если не удалось открыть контейнеры
       }
-      for (let i = 1; i <= countToken; i++) {
-        const cert = await certsToken.Item(i);
-        const thumbprint = await cert.Thumbprint;
-        const subjectName = await cert.SubjectName;
-        certList.push({ thumbprint, subjectName, source: 'Токен/смарт-карта' });
+      // Внешние устройства (токены)
+      try {
+        const store2 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+        await store2.Open(
+          window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
+          window.cadesplugin.CAPICOM_MY_STORE,
+          window.cadesplugin.CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER
+        );
+        const certs2 = await store2.Certificates;
+        const count2 = await certs2.Count;
+        for (let i = 1; i <= count2; i++) {
+          const cert = await certs2.Item(i);
+          const thumbprint = await cert.Thumbprint;
+          const subjectName = await cert.SubjectName;
+          certList.push({ thumbprint, subjectName, source: 'Внешний токен/смарт-карта' });
+        }
+      } catch (e) {
+        // Не критично, если не удалось открыть токен
       }
-      if (certList.length === 0) {
+      // Удаляем дубликаты по thumbprint
+      const uniqueCerts = certList.filter((cert, index, self) =>
+        index === self.findIndex((c) => c.thumbprint === cert.thumbprint)
+      );
+      if (uniqueCerts.length === 0) {
         setError('Сертификаты не найдены. Убедитесь, что у вас есть установленные и действительные сертификаты.');
       } else {
-        setCertificates(certList);
-        setSelectedCert(certList[0].thumbprint);
+        setCertificates(uniqueCerts);
+        setSelectedCert(uniqueCerts[0].thumbprint);
         setError(null);
       }
     } catch (err) {

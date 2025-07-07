@@ -50,36 +50,80 @@ const CertificateList = () => {
     try {
       setLoading(true);
       setError(null);
-
-      const cadesPluginInitFunction = await cadesplugin;
-      const certsApi = await cadesPluginInitFunction();
-      
-      const certList = await certsApi.getCertsList();
-      
-      if (certList.length === 0) {
+      const certList = [];
+      // Обычное хранилище (контейнеры)
+      try {
+        const store1 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+        await store1.Open(
+          window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
+          window.cadesplugin.CAPICOM_MY_STORE,
+          window.cadesplugin.CAPICOM_STORE_OPEN_MAXIMUM_ALLOWED
+        );
+        const certs1 = await store1.Certificates;
+        const count1 = await certs1.Count;
+        for (let i = 1; i <= count1; i++) {
+          const cert = await certs1.Item(i);
+          const thumbprint = await cert.Thumbprint;
+          const subjectName = await cert.SubjectName;
+          const issuerInfo = await cert.IssuerName;
+          const validFrom = await cert.ValidFromDate;
+          const validTo = await cert.ValidToDate;
+          const serialNumber = await cert.SerialNumber;
+          certList.push({
+            thumbprint,
+            subjectName,
+            issuerInfo,
+            validFrom,
+            validTo,
+            serialNumber,
+            source: 'Контейнер (личное хранилище)',
+            rawCert: cert
+          });
+        }
+      } catch (e) {}
+      // Внешние устройства (токены)
+      try {
+        const store2 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+        await store2.Open(
+          window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
+          window.cadesplugin.CAPICOM_MY_STORE,
+          window.cadesplugin.CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER
+        );
+        const certs2 = await store2.Certificates;
+        const count2 = await certs2.Count;
+        for (let i = 1; i <= count2; i++) {
+          const cert = await certs2.Item(i);
+          const thumbprint = await cert.Thumbprint;
+          const subjectName = await cert.SubjectName;
+          const issuerInfo = await cert.IssuerName;
+          const validFrom = await cert.ValidFromDate;
+          const validTo = await cert.ValidToDate;
+          const serialNumber = await cert.SerialNumber;
+          certList.push({
+            thumbprint,
+            subjectName,
+            issuerInfo,
+            validFrom,
+            validTo,
+            serialNumber,
+            source: 'Внешний токен/смарт-карта',
+            rawCert: cert
+          });
+        }
+      } catch (e) {}
+      // Удаляем дубликаты по thumbprint
+      const uniqueCerts = certList.filter((cert, index, self) =>
+        index === self.findIndex((c) => c.thumbprint === cert.thumbprint)
+      );
+      if (uniqueCerts.length === 0) {
         setError('Сертификаты не найдены');
         setCertificates([]);
         return;
       }
-
-      // Преобразуем сертификаты в более удобный формат для отображения
-      const formattedCerts = certList.map((cert, index) => ({
-        id: index,
-        thumbprint: cert.thumbprint || 'Не указан',
-        subjectName: cert.subjectInfo || 'Не указан',
-        issuerInfo: cert.issuerInfo || 'Не указан',
-        validFrom: cert.validFrom || 'Не указан',
-        validTo: cert.validTo || 'Не указан',
-        serialNumber: cert.serialNumber || 'Не указан',
-        rawCert: cert
-      }));
-
-      setCertificates(formattedCerts);
-      
+      setCertificates(uniqueCerts);
       // Также выводим в консоль для отладки
-      console.log('Загружено сертификатов:', formattedCerts.length);
-      console.log('Сертификаты:', formattedCerts);
-      
+      console.log('Загружено сертификатов:', uniqueCerts.length);
+      console.log('Сертификаты:', uniqueCerts);
     } catch (err) {
       console.error('Ошибка загрузки сертификатов:', err);
       setError('Ошибка загрузки сертификатов: ' + err.message);

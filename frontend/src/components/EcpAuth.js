@@ -36,6 +36,7 @@ const EcpAuth = () => {
       const certList = [];
       // Обычное хранилище (контейнеры)
       try {
+        console.log('Пробуем открыть контейнеры (MAXIMUM_ALLOWED)');
         const store1 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
         await store1.Open(
           window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
@@ -44,6 +45,7 @@ const EcpAuth = () => {
         );
         const certs1 = await store1.Certificates;
         const count1 = await certs1.Count;
+        console.log(`Найдено сертификатов в контейнерах: ${count1}`);
         for (let i = 1; i <= count1; i++) {
           const cert = await certs1.Item(i);
           const subjectName = await cert.SubjectName;
@@ -51,49 +53,56 @@ const EcpAuth = () => {
           const validFrom = await cert.ValidFromDate;
           const validTo = await cert.ValidToDate;
           certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: 'Контейнер (личное хранилище)' });
+          try { console.log('[Контейнер] subject:', subjectName, 'issuer:', issuerName, 'valid:', validFrom, '-', validTo); } catch (e) {}
         }
       } catch (e) {
-        // Не критично, если не удалось открыть контейнеры
+        console.error('Ошибка открытия контейнеров:', e);
       }
-      // Внешние устройства (токены)
-      try {
-        const store2 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-        await store2.Open(
-          window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
-          window.cadesplugin.CAPICOM_MY_STORE,
-          window.cadesplugin.CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER
-        );
-        const certs2 = await store2.Certificates;
-        const count2 = await certs2.Count;
-        for (let i = 1; i <= count2; i++) {
-          const cert = await certs2.Item(i);
-          const subjectName = await cert.SubjectName;
-          const issuerName = await cert.IssuerName;
-          const validFrom = await cert.ValidFromDate;
-          const validTo = await cert.ValidToDate;
-          certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: 'Внешний токен/смарт-карта' });
-        }
-      } catch (e) {
-        // Не критично, если не удалось открыть токен
-      }
-      // Удаляем дубликаты по thumbprint
-      const uniqueCerts = [];
-      const seenThumbprints = new Set();
-      for (const c of certList) {
+      // Внешние устройства (токены) — перебор всех возможных типов
+      const tokenStoreTypes = [
+        'CAPICOM_STORE_OPEN_EXTERNAL_PROVIDER',
+        'CAPICOM_STORE_OPEN_EXTERNAL',
+        'CAPICOM_STORE_OPEN_EXTERNAL_TOKEN',
+        'CAPICOM_STORE_OPEN_EXTERNAL_KEY_MEDIA'
+      ];
+      for (const typeName of tokenStoreTypes) {
         try {
-          const thumbprint = await c.cert.Thumbprint;
-          if (!seenThumbprints.has(thumbprint)) {
-            seenThumbprints.add(thumbprint);
-            uniqueCerts.push({ ...c, thumbprint });
+          const type = window.cadesplugin[typeName];
+          if (typeof type === 'undefined') {
+            console.log(`Тип ${typeName} не поддерживается CSP/плагином`);
+            continue;
           }
-        } catch (e) {}
+          console.log(`Пробуем открыть токены (${typeName})`);
+          const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+          await store.Open(
+            window.cadesplugin.CAPICOM_CURRENT_USER_STORE,
+            window.cadesplugin.CAPICOM_MY_STORE,
+            type
+          );
+          const certs = await store.Certificates;
+          const count = await certs.Count;
+          console.log(`Найдено сертификатов в токенах (${typeName}): ${count}`);
+          for (let i = 1; i <= count; i++) {
+            const cert = await certs.Item(i);
+            const subjectName = await cert.SubjectName;
+            const issuerName = await cert.IssuerName;
+            const validFrom = await cert.ValidFromDate;
+            const validTo = await cert.ValidToDate;
+            certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: `Токен (${typeName})` });
+            try { console.log(`[${typeName}] subject:`, subjectName, 'issuer:', issuerName, 'valid:', validFrom, '-', validTo); } catch (e) {}
+          }
+        } catch (e) {
+          console.error(`Ошибка открытия токенов (${typeName}):`, e);
+        }
       }
-      if (uniqueCerts.length === 0) {
+      if (certList.length === 0) {
         setStatus("Нет доступных сертификатов.");
         setCertLoading(false);
         return;
       }
-      setCertificates(uniqueCerts);
+      setCertificates(certList); // Без удаления дубликатов!
+      console.log('Загружено сертификатов (всего, с возможными дублями):', certList.length);
+      console.log('Сертификаты:', certList);
     } catch (e) {
       setStatus("Ошибка при получении сертификатов: " + e.message);
     }

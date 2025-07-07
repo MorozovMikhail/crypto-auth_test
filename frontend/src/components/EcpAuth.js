@@ -31,6 +31,39 @@ const EcpAuth = () => {
     setCertificates([]);
     setSelectedCertIndex("");
     setCertInfo(null);
+    // Новый способ через window.crypto_pro.getCertificates
+    if (window.crypto_pro && typeof window.crypto_pro.getCertificates === 'function') {
+      try {
+        console.log('Используется window.crypto_pro.getCertificates');
+        window.crypto_pro.getCertificates(function(certs) {
+          if (!certs || certs.length === 0) {
+            setStatus("Нет доступных сертификатов (crypto_pro.getCertificates)");
+            setCertLoading(false);
+            return;
+          }
+          // Выводим в консоль и отображаем в интерфейсе
+          console.log('Сертификаты (crypto_pro):', certs);
+          // Приводим к единому виду для отображения
+          const certList = certs.map((c, idx) => ({
+            subjectName: c.subject || c.subjectName || `Сертификат ${idx+1}`,
+            issuerName: c.issuer || c.issuerName || '',
+            validFrom: c.validFrom || '',
+            validTo: c.validTo || '',
+            source: 'crypto_pro.getCertificates',
+            cert: c
+          }));
+          setCertificates(certList);
+          setStatus("");
+          setCertLoading(false);
+        });
+        return;
+      } catch (e) {
+        console.error('Ошибка при работе с crypto_pro.getCertificates:', e);
+        setStatus('Ошибка при работе с crypto_pro.getCertificates: ' + e.message);
+        setCertLoading(false);
+        return;
+      }
+    }
     try {
       await window.cadesplugin;
       const certList = [];

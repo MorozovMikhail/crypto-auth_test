@@ -1,139 +1,100 @@
-import React, { useState, useEffect } from "react";
-import { Button, TextField, Typography, Box, Alert, CircularProgress, MenuItem, Select, FormControl, InputLabel, List, ListItem, ListItemText, Divider, Tooltip } from "@mui/material";
+import React, { useState } from "react";
+import { Button, Typography, Box, CircularProgress, Alert, MenuItem, Select, FormControl, InputLabel } from "@mui/material";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:8080/api/auth";
 
 const EcpAuth = () => {
   const [challenge, setChallenge] = useState("");
-  const [status, setStatus] = useState("");
+  const [certs, setCerts] = useState([]);
+  const [selectedCertIdx, setSelectedCertIdx] = useState("");
   const [loading, setLoading] = useState(false);
-  const [certLoading, setCertLoading] = useState(false);
-  const [sessionId] = useState(() => Math.random().toString(36).substring(2));
-  const [certificates, setCertificates] = useState([]);
-  const [selectedCertIndex, setSelectedCertIndex] = useState("");
-  const [certInfo, setCertInfo] = useState(null);
-  const [certsRequested, setCertsRequested] = useState(false);
+  const [certsLoading, setCertsLoading] = useState(false);
+  const [signing, setSigning] = useState(false);
+  const [error, setError] = useState("");
+  const [status, setStatus] = useState("");
 
-  // Гарантированный сброс статуса и certsRequested при первом рендере и при каждом рендере, если certsRequested === false
-  useEffect(() => {
-    if (!certsRequested) {
-      setStatus("");
-    }
-  }, [certsRequested]);
-
-  // Получение challenge с сервера
+  // Получить challenge с backend
   const getChallenge = async () => {
+    setError("");
     setStatus("");
-    setCertsRequested(false); // Сброс флага при получении challenge
-    setCertificates([]);      // Сброс найденных сертификатов
-    setSelectedCertIndex("");
-    setCertInfo(null);
-    setLoading(true);
     setChallenge("");
-    const res = await fetch(`${API_URL}/challenge?sessionId=${sessionId}`);
-    const data = await res.json();
-    setChallenge(data.challenge);
+    setSelectedCertIdx("");
+    setCerts([]);
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/challenge?sessionId=${Math.random().toString(36).substring(2)}`);
+      const data = await res.json();
+      setChallenge(data.challenge);
+      setStatus("Challenge получен");
+    } catch (e) {
+      setError("Ошибка получения challenge: " + (e.message || e.toString()));
+    }
     setLoading(false);
   };
 
-  // Универсальная функция получения сертификатов
-  const getCertificates = async (showNotFound = true) => {
-    setCertLoading(true);
-    setCertificates([]);
-    setSelectedCertIndex("");
-    setCertInfo(null);
-    let found = false;
-    // 1. Пробуем window.crypto_pro.getCertificates
-    if (window.crypto_pro && typeof window.crypto_pro.getCertificates === 'function') {
-      try {
-        window.crypto_pro.getCertificates(function(certs) {
-          if (!certs || certs.length === 0) {
-            if (showNotFound) setStatus('Нет доступных сертификатов (crypto_pro.getCertificates)');
-            setCertLoading(false);
-            return;
-          }
-          const certList = certs.map((c, idx) => ({
-            subjectName: c.subject || c.subjectName || `Сертификат ${idx+1}`,
-            issuerName: c.issuer || c.issuerName || '',
-            validFrom: c.validFrom || '',
-            validTo: c.validTo || '',
-            source: 'crypto_pro.getCertificates',
-            cert: c
-          }));
-          setCertificates(certList);
-          setStatus("");
-          setCertLoading(false);
-        });
-        return;
-      } catch (e) {
-        setStatus('Ошибка при работе с crypto_pro.getCertificates: ' + e.message);
-        setCertLoading(false);
-        return;
-      }
-    }
-    // 2. Fallback: CAdESCOM.Store (без CAPICOM_*)
-    try {
-      const certList = [];
-      // Обычное хранилище (контейнеры)
-      try {
-        const store1 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-        await store1.Open(2, "My", 2);
-        const certs1 = await store1.Certificates;
-        const count1 = await certs1.Count;
-        for (let i = 1; i <= count1; i++) {
-          const cert = await certs1.Item(i);
-          const subjectName = await cert.SubjectName;
-          const issuerName = await cert.IssuerName;
-          const validFrom = await cert.ValidFromDate;
-          const validTo = await cert.ValidToDate;
-          certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: 'Контейнер (личное хранилище)' });
-        }
-      } catch (e) {}
-      // Внешние устройства (токены)
-      const tokenStoreTypes = [3, 4, 5, 6];
-      for (const type of tokenStoreTypes) {
-        try {
-          const store = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
-          await store.Open(2, "My", type);
-          const certs = await store.Certificates;
-          const count = await certs.Count;
-          for (let i = 1; i <= count; i++) {
-            const cert = await certs.Item(i);
-            const subjectName = await cert.SubjectName;
-            const issuerName = await cert.IssuerName;
-            const validFrom = await cert.ValidFromDate;
-            const validTo = await cert.ValidToDate;
-            certList.push({ cert, subjectName, issuerName, validFrom, validTo, source: `Токен (тип ${type})` });
-          }
-        } catch (e) {}
-      }
-      if (certList.length === 0) {
-        if (showNotFound) setStatus("Сертификаты не найдены. Убедитесь, что у вас есть установленные и действительные сертификаты.");
-        setCertLoading(false);
-        return;
-      }
-      setCertificates(certList);
-      setStatus("");
-    } catch (e) {
-      setStatus("Ошибка при получении сертификатов: " + e.message);
-    }
-    setCertLoading(false);
-  };
-
-  // При выборе сертификата
-  const handleCertChange = (event) => {
-    setStatus(""); // сбросить статус при выборе сертификата
-    const idx = event.target.value;
-    setSelectedCertIndex(idx);
-    setCertInfo(certificates[idx]);
-  };
-
-  // Подпись challenge через КриптоПро
-  const signChallenge = async () => {
+  // Получить сертификаты с токена (только через window.cadesplugin)
+  const loadCerts = async () => {
+    setError("");
     setStatus("");
-    setLoading(true);
+    setCerts([]);
+    setSelectedCertIdx("");
+    setCertsLoading(true);
     try {
-      const cert = certificates[selectedCertIndex].cert;
+      await window.cadesplugin;
+      const allCerts = [];
+      // 1. Контейнеры Windows (личное хранилище)
+      const store1 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+      await store1.Open(window.cadesplugin.CADESCOM_CURRENT_USER_STORE, "My", 0);
+      const certs1 = await store1.Certificates;
+      const count1 = await certs1.Count;
+      for (let i = 1; i <= count1; i++) {
+        const cert = await certs1.Item(i);
+        allCerts.push({
+          subject: await cert.SubjectName,
+          issuer: await cert.IssuerName,
+          thumbprint: await cert.Thumbprint,
+          validTo: new Date(await cert.ValidToDate).toLocaleDateString(),
+          certObj: cert,
+          source: 'Контейнер Windows'
+        });
+      }
+      await store1.Close();
+      // 2. Токен/смарт-карта
+      const store2 = await window.cadesplugin.CreateObjectAsync("CAdESCOM.Store");
+      await store2.Open(window.cadesplugin.CADESCOM_SMART_CARD_USER_STORE, "My", 0);
+      const certs2 = await store2.Certificates;
+      const count2 = await certs2.Count;
+      for (let i = 1; i <= count2; i++) {
+        const cert = await certs2.Item(i);
+        allCerts.push({
+          subject: await cert.SubjectName,
+          issuer: await cert.IssuerName,
+          thumbprint: await cert.Thumbprint,
+          validTo: new Date(await cert.ValidToDate).toLocaleDateString(),
+          certObj: cert,
+          source: 'Токен/смарт-карта'
+        });
+      }
+      await store2.Close();
+      if (allCerts.length === 0) throw new Error("Сертификаты не найдены");
+      setCerts(allCerts);
+      setStatus("Сертификаты получены");
+    } catch (e) {
+      setError(e.message || "Ошибка получения сертификатов");
+    }
+    setCertsLoading(false);
+  };
+
+  // Подписать challenge выбранным сертификатом и отправить на backend
+  const signAndAuth = async () => {
+    setError("");
+    setStatus("");
+    setSigning(true);
+    try {
+      if (!challenge) throw new Error("Сначала получите challenge");
+      if (selectedCertIdx === "") throw new Error("Выберите сертификат");
+      const cert = certs[selectedCertIdx].certObj;
+      // Подпись challenge
       const signer = await window.cadesplugin.CreateObjectAsync("CAdESCOM.CPSigner");
       await signer.propset_Certificate(cert);
       const signedData = await window.cadesplugin.CreateObjectAsync("CAdESCOM.CadesSignedData");
@@ -144,91 +105,80 @@ const EcpAuth = () => {
         true
       );
       const certBase64 = await cert.Export(window.cadesplugin.CAPICOM_ENCODE_BASE64);
+      // Отправка подписи на backend
       const res = await fetch(`${API_URL}/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, challenge, signature, certificate: certBase64 }),
+        body: JSON.stringify({ challenge, signature, certificate: certBase64 })
       });
       const result = await res.json();
-      setStatus(result.success ? "Успешная авторизация" : `Ошибка: ${result.message}`);
+      if (result.success) {
+        setStatus("Успешная авторизация!");
+      } else {
+        setError("Ошибка авторизации: " + (result.message || ""));
+      }
     } catch (e) {
-      setStatus("Ошибка при подписании: " + e.message);
+      let msg = e.message || e.toString();
+      if (msg.includes('0x80070057') || msg.includes('Параметр задан неверно')) {
+        msg = 'Выбранный сертификат не подходит для подписи. Пожалуйста, выберите сертификат с токена/смарт-карты, предназначенный для ЭЦП.';
+      }
+      setError("Ошибка при подписании/авторизации: " + msg);
     }
-    setLoading(false);
+    setSigning(false);
   };
 
   return (
-    <Box sx={{ maxWidth: 500, mx: "auto", mt: 8, p: 4, boxShadow: 3, borderRadius: 2 }}>
-      <Typography variant="h5" gutterBottom>Вход с помощью ЭЦП</Typography>
-      <Button variant="contained" fullWidth onClick={getChallenge} sx={{ mb: 2 }} disabled={loading}>
+    <Box sx={{ maxWidth: 600, mx: "auto", mt: 8, p: 4, boxShadow: 3, borderRadius: 2 }}>
+      <Typography variant="h5" gutterBottom>Авторизация с помощью ЭЦП</Typography>
+      <Button variant="contained" fullWidth onClick={getChallenge} disabled={loading} sx={{ mb: 2 }}>
         {loading ? <CircularProgress size={24} /> : "Получить challenge"}
       </Button>
       {challenge && (
-        <>
-          <TextField
-            label="Challenge"
-            value={challenge}
-            fullWidth
-            InputProps={{ readOnly: true }}
-            sx={{ mb: 2 }}
-          />
-          <Alert severity="info" sx={{ mb: 2 }}>
-            Если вы только что вставили токен, подождите несколько секунд и нажмите <b>«Обновить сертификаты»</b>.<br/>
-            Если сертификаты не появились — попробуйте ещё раз.
-          </Alert>
-          <Tooltip title="Если вы только что вставили токен, подождите пару секунд и нажмите ещё раз!">
-            <Button variant="outlined" fullWidth onClick={() => { setCertsRequested(true); getCertificates(true); }} sx={{ mb: 2 }} disabled={certLoading}>
-              {certLoading ? <CircularProgress size={24} /> : "Обновить сертификаты"}
-            </Button>
-          </Tooltip>
-          {certificates.length > 0 && (
-            <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel id="cert-select-label">Выберите сертификат</InputLabel>
-              <Select
-                labelId="cert-select-label"
-                value={selectedCertIndex}
-                label="Выберите сертификат"
-                onChange={handleCertChange}
-              >
-                {certificates.map((c, idx) => (
-                  <MenuItem value={idx} key={idx}>
-                    {c.subjectName} ({c.source})
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
-          {certInfo && (
-            <List dense sx={{ mb: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-              <ListItem>
-                <ListItemText primary="Владелец" secondary={certInfo.subjectName} />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="Издатель" secondary={certInfo.issuerName} />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="Действителен с" secondary={certInfo.validFrom} />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="Действителен до" secondary={certInfo.validTo} />
-              </ListItem>
-              <ListItem>
-                <ListItemText primary="Источник" secondary={certInfo.source} />
-              </ListItem>
-            </List>
-          )}
-          <Button
-            variant="contained"
-            color="success"
-            fullWidth
-            onClick={signChallenge}
-            disabled={loading || selectedCertIndex === ""}
-          >
-            {loading ? <CircularProgress size={24} /> : "Подписать и войти"}
-          </Button>
-        </>
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>Challenge: {challenge}</Typography>
+        </Box>
       )}
-      {status && certsRequested && <Alert severity={status.startsWith("Успеш") ? "success" : "error"} sx={{ mt: 2 }}>{status}</Alert>}
+      <Button variant="outlined" fullWidth onClick={loadCerts} disabled={certsLoading} sx={{ mb: 2 }}>
+        {certsLoading ? <CircularProgress size={24} /> : "Получить сертификаты"}
+      </Button>
+      {certs.length > 0 && (
+        <FormControl fullWidth sx={{ mb: 2 }}>
+          <InputLabel id="cert-select-label">Выберите сертификат</InputLabel>
+          <Select
+            labelId="cert-select-label"
+            value={selectedCertIdx}
+            label="Выберите сертификат"
+            onChange={e => setSelectedCertIdx(e.target.value)}
+          >
+            {certs.map((cert, idx) => (
+              <MenuItem value={idx} key={idx}>
+                {cert.subject} (до {cert.validTo}) — {cert.source}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      )}
+      {selectedCertIdx !== "" && certs[selectedCertIdx] && (
+        <Box sx={{ mb: 2, bgcolor: '#f5f5f5', borderRadius: 1, p: 2 }}>
+          <div><b>Субъект:</b> {certs[selectedCertIdx].subject}</div>
+          <div><b>Издатель:</b> {certs[selectedCertIdx].issuer}</div>
+          <div><b>Отпечаток:</b> {certs[selectedCertIdx].thumbprint}</div>
+          <div><b>Действует до:</b> {certs[selectedCertIdx].validTo}</div>
+          <div><b>Источник:</b> {certs[selectedCertIdx].source}</div>
+        </Box>
+      )}
+      <Button
+        variant="contained"
+        color="success"
+        fullWidth
+        onClick={signAndAuth}
+        disabled={signing || !challenge || selectedCertIdx === ""}
+        sx={{ mb: 2 }}
+      >
+        {signing ? <CircularProgress size={24} /> : "Подписать и войти"}
+      </Button>
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {status && <Alert severity="success" sx={{ mb: 2 }}>{status}</Alert>}
     </Box>
   );
 };
